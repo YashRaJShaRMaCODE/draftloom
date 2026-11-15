@@ -9,23 +9,33 @@
 
 This prototype is for adults (18+) and professional use. Text submitted to the app is sent to Google Gemini. Avoid sensitive, confidential, or personal information. Google’s data-use terms differ between unpaid and paid API usage; unpaid service content may be used to improve Google products and may be reviewed by people. Read the [Gemini API terms](https://ai.google.dev/gemini-api/terms) before handling user content.
 
-The app has no accounts, user-level quotas, or billing controls yet. Its anonymous API limit is a basic abuse guard, not a commercial billing system. Add account-level controls and review provider terms, privacy requirements, and deployment security before offering this as a public paid product.
+The API has optional email/password accounts, email verification, password recovery, workspace-scoped voice settings, team invitations, member controls, ownership transfer, and self-serve account deletion. A test-mode Stripe checkout, billing portal, and signed webhook integration are implemented locally; the live demo keeps accounts and billing disabled. Production accounts require PostgreSQL, verified SMTP settings, monitoring, reviewed legal/privacy details, and explicit backend/frontend enable flags. This worktree has not been deployed or tested against a Stripe account, so it is not ready for paid customer accounts. The anonymous API limit is a basic abuse guard, not a commercial billing system.
+
+Each signed-in free workspace is capped at 100 successful AI requests per UTC calendar month by default (`FREE_MONTHLY_REQUEST_LIMIT`); a matching active/trialing Team subscription can raise that to 300 (`TEAM_MONTHLY_REQUEST_LIMIT`). Free workspaces allow 3 seats and Team workspaces 5 by default. Usage limits protect provider spend; temporary failures, invalid provider responses, and empty results release the reserved use. Limits are configurable and are not a price or a promise of uninterrupted service.
 
 ## What it does
 
 - Rewrite text while preserving its intent, or summarise the key points.
 - Choose a clear, warm, direct, or formal output tone for either action.
+- Add optional voice guidance and up to eight reusable phrases; anonymous settings stay in the current browser tab, while signed-in workspace settings can be saved in the configured database. Phrases enter an AI request only after you insert them into the draft.
+- Create a password-protected workspace in local development; each new account must verify its email before signing in and gets a private workspace owner membership.
+- Invite teammates by email with a seven-day, single-use link; only the invited, verified account can accept it. Invitation tokens are stored as hashes, and owners can revoke pending invitations.
+- Let workspace owners review the team, remove members, and transfer ownership. Only owners can change shared voice guidance and reusable phrases; members can use those settings while writing.
+- Switch between workspaces in a signed-in browser tab; workspace settings, member access, and AI usage are scoped to the selected workspace.
+- Request a password reset by email; a successful reset revokes outstanding refresh tokens.
+- Delete an account after confirming its email and password. Owners must transfer ownership or remove other team members first; other workspaces remain for their teams.
 - Start from a sample draft, see word and character counts, and edit up to 5,000 characters.
 - Keep the current draft in this browser tab across reloads; Clear draft removes the saved copy.
 - Show whether the draft is saved in this tab and warn clearly when browser storage is unavailable.
 - Review results in place, copy or download them, or use one as the next draft.
 - Compare a rewrite or summary with the original draft, including the word-count change, before you use it.
 - Restore the original draft after using a result as the next draft, including after a reload in the same tab; both drafts stay in session storage.
-- Submit only after confirming you are 18+ and agreeing to send text to Google Gemini.
+- Submit only after confirming you are 18+ and agreeing to send the draft and any voice guidance to Google Gemini.
 - Show a clear retry message when the anonymous demo request limit is reached; the draft stays in the browser.
 - Stop waiting after 45 seconds and keep the draft visible if the service does not respond in time.
 - Keep provider API credentials on the backend; the browser receives only the service URL.
 - Protect the static frontend with a restrictive Content Security Policy and cache hashed assets for a year.
+- The local build includes a plain-language privacy notice at `/privacy.html`; it still needs operator contact details and a jurisdiction-specific review before commercial launch.
 
 ## Stack
 
@@ -90,6 +100,10 @@ The live frontend is a Render static site and the API is a separate Render web s
 - The static site applies a same-origin script/style policy, limits API connections to the configured backend, and denies framing.
 - Set the frontend's public `VITE_API_URL` to the HTTPS origin of the deployed API. It is compiled into browser code and must never contain a secret. Production builds do not fall back to localhost.
 - Set `CORS_ALLOWED_ORIGINS` on the API to the exact HTTPS origin of the live frontend.
+- Set `DATABASE_URL` to a managed PostgreSQL connection string before enabling accounts. SQLite remains the local-development fallback and is not suitable for durable production workspaces.
+- Configure `EMAIL_HOST`, `EMAIL_PORT`, `EMAIL_USE_TLS=true`, `EMAIL_HOST_USER`, `EMAIL_HOST_PASSWORD`, `DEFAULT_FROM_EMAIL`, and HTTPS `PUBLIC_APP_URL` before enabling accounts.
+- Keep `ENABLE_ACCOUNTS=false`, `VITE_ACCOUNTS_ENABLED=false`, and `ENABLE_BILLING=false` until a durable database, email delivery, Stripe webhook delivery, monitoring, support contact, and privacy/legal review are ready for the intended users.
+- Billing is test-mode only: the backend refuses to enable it without a Stripe `sk_test_` key, webhook signing secret, configured `price_` ID, and HTTPS `PUBLIC_APP_URL`. Never substitute a live key; live-mode webhooks are rejected. The Team price is configured in Stripe and is not hard-coded in this repository.
 - Serve over HTTPS. Set `SECURE_SSL_REDIRECT=true` only when the deployment is configured to serve HTTPS correctly. Enable HSTS after confirming the full domain and its subdomains use HTTPS.
 - Use a paid Gemini API project for any service handling user content, and verify the terms and privacy requirements for the intended audience and region.
-- Add user authentication, per-user quotas, billing controls, monitoring, and a privacy policy before public commercial use.
+- Before public commercial use, configure billing and monitoring, and approve the privacy notice with the responsible business/contact and jurisdiction-specific requirements.

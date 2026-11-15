@@ -12,7 +12,10 @@ https://docs.djangoproject.com/en/6.0/ref/settings/
 
 import os
 import secrets
+from datetime import timedelta
 from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlsplit
+
 from django.core.exceptions import ImproperlyConfigured
 from dotenv import load_dotenv
 
@@ -51,6 +54,7 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
+    'rest_framework_simplejwt.token_blacklist',
 ]
 
 MIDDLEWARE = [
@@ -59,6 +63,7 @@ MIDDLEWARE = [
     'whitenoise.middleware.WhiteNoiseMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
     'django.middleware.common.CommonMiddleware',
+    'backend.middleware.NoStoreApiResponsesMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
@@ -88,12 +93,31 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # Database
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
-DATABASES = {
-    'default': {
-        'ENGINE': 'django.db.backends.sqlite3',
-        'NAME': BASE_DIR / 'db.sqlite3',
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+if DATABASE_URL:
+    parsed_database_url = urlsplit(DATABASE_URL)
+    if parsed_database_url.scheme not in {"postgres", "postgresql"}:
+        raise ImproperlyConfigured("DATABASE_URL must use PostgreSQL")
+    database_options = {key: values[-1] for key, values in parse_qs(parsed_database_url.query).items()}
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.postgresql",
+            "NAME": unquote(parsed_database_url.path.lstrip("/")),
+            "USER": unquote(parsed_database_url.username or ""),
+            "PASSWORD": unquote(parsed_database_url.password or ""),
+            "HOST": parsed_database_url.hostname or "",
+            "PORT": str(parsed_database_url.port or ""),
+            "CONN_MAX_AGE": 60,
+            "OPTIONS": database_options,
+        }
     }
-}
+else:
+    DATABASES = {
+        "default": {
+            "ENGINE": "django.db.backends.sqlite3",
+            "NAME": BASE_DIR / 'db.sqlite3',
+        }
+    }
 
 
 # Password validation
@@ -142,6 +166,19 @@ SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "false").strip().low
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
 SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "0")) if SECURE_SSL_REDIRECT else 0
+EMAIL_BACKEND = os.environ.get(
+    "EMAIL_BACKEND",
+    "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
+)
+EMAIL_HOST = os.environ.get("EMAIL_HOST", "")
+EMAIL_PORT = int(os.environ.get("EMAIL_PORT", "587"))
+EMAIL_USE_TLS = os.environ.get("EMAIL_USE_TLS", "true").strip().lower() == "true"
+EMAIL_HOST_USER = os.environ.get("EMAIL_HOST_USER", "")
+EMAIL_HOST_PASSWORD = os.environ.get("EMAIL_HOST_PASSWORD", "")
+DEFAULT_FROM_EMAIL = os.environ.get("DEFAULT_FROM_EMAIL", "Draftloom <no-reply@localhost>" if DEBUG else "")
+EMAIL_TIMEOUT = 5
+PASSWORD_RESET_TIMEOUT = 3600
+PUBLIC_APP_URL = os.environ.get("PUBLIC_APP_URL", "http://localhost:5173" if DEBUG else "").rstrip("/")
 
 REST_FRAMEWORK = {
     "DEFAULT_AUTHENTICATION_CLASSES": (
@@ -151,5 +188,34 @@ REST_FRAMEWORK = {
         "rest_framework.throttling.AnonRateThrottle",
         "rest_framework.throttling.UserRateThrottle",
     ),
-    "DEFAULT_THROTTLE_RATES": {"anon": "10/hour", "user": "60/hour"},
+    "DEFAULT_THROTTLE_RATES": {"anon": "10/hour", "user": "60/hour", "workspace-invitations": "10/hour"},
+}
+ACCOUNTS_ENABLED = (
+    os.environ.get("ENABLE_ACCOUNTS", "true" if DEBUG else "false").strip().lower() == "true"
+    and (DEBUG or bool(
+        DATABASE_URL and EMAIL_HOST and EMAIL_PORT > 0 and EMAIL_USE_TLS
+        and EMAIL_HOST_USER and EMAIL_HOST_PASSWORD and DEFAULT_FROM_EMAIL
+        and PUBLIC_APP_URL.startswith("https://")
+    ))
+)
+FREE_MONTHLY_REQUEST_LIMIT = int(os.environ.get("FREE_MONTHLY_REQUEST_LIMIT", "100"))
+TEAM_MONTHLY_REQUEST_LIMIT = int(os.environ.get("TEAM_MONTHLY_REQUEST_LIMIT", "300"))
+FREE_WORKSPACE_SEAT_LIMIT = int(os.environ.get("FREE_WORKSPACE_SEAT_LIMIT", "3"))
+TEAM_WORKSPACE_SEAT_LIMIT = int(os.environ.get("TEAM_WORKSPACE_SEAT_LIMIT", "5"))
+STRIPE_SECRET_KEY = os.environ.get("STRIPE_SECRET_KEY", "")
+STRIPE_WEBHOOK_SECRET = os.environ.get("STRIPE_WEBHOOK_SECRET", "")
+STRIPE_TEAM_PRICE_ID = os.environ.get("STRIPE_TEAM_PRICE_ID", "")
+BILLING_ENABLED = (
+    os.environ.get("ENABLE_BILLING", "false").strip().lower() == "true"
+    and ACCOUNTS_ENABLED
+    and STRIPE_SECRET_KEY.startswith("sk_test_")
+    and STRIPE_WEBHOOK_SECRET.startswith("whsec_")
+    and STRIPE_TEAM_PRICE_ID.startswith("price_")
+    and PUBLIC_APP_URL.startswith("https://")
+)
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=20),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=7),
+    "ROTATE_REFRESH_TOKENS": True,
+    "BLACKLIST_AFTER_ROTATION": True,
 }

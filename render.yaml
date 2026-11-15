@@ -15,6 +15,38 @@ services:
         value: ".onrender.com"
       - key: CORS_ALLOWED_ORIGINS
         sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: ENABLE_ACCOUNTS
+        value: "False"
+      - key: ENABLE_BILLING
+        value: "False"
+      - key: STRIPE_SECRET_KEY
+        sync: false
+      - key: STRIPE_WEBHOOK_SECRET
+        sync: false
+      - key: STRIPE_TEAM_PRICE_ID
+        sync: false
+      - key: TEAM_MONTHLY_REQUEST_LIMIT
+        value: "300"
+      - key: FREE_WORKSPACE_SEAT_LIMIT
+        value: "3"
+      - key: TEAM_WORKSPACE_SEAT_LIMIT
+        value: "5"
+      - key: EMAIL_HOST
+        sync: false
+      - key: EMAIL_PORT
+        value: "587"
+      - key: EMAIL_USE_TLS
+        value: "True"
+      - key: EMAIL_HOST_USER
+        sync: false
+      - key: EMAIL_HOST_PASSWORD
+        sync: false
+      - key: DEFAULT_FROM_EMAIL
+        sync: false
+      - key: PUBLIC_APP_URL
+        value: https://clear-writing-studio.onrender.com
   - type: web
     name: clear-writing-studio
     runtime: static
@@ -25,6 +57,8 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://ai-writing-assistant-xfbr.onrender.com
+      - key: VITE_ACCOUNTS_ENABLED
+        value: "False"
     headers:
       - path: /assets/*
         name: Cache-Control

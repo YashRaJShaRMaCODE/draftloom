@@ -1,10 +1,17 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
 const DRAFT_STORAGE_KEY = "clear-writing:draft:v1";
 const PREVIOUS_DRAFT_STORAGE_KEY = "clear-writing:previous-draft:v1";
+const VOICE_STORAGE_KEY = "clear-writing:team-voice:v1";
+const SNIPPETS_STORAGE_KEY = "clear-writing:snippets:v1";
+const ACCOUNT_STORAGE_KEY = "clear-writing:account:v1";
+const WORKSPACE_ID_KEY = "clear-writing:workspace-id:v1";
+const MAX_VOICE_LENGTH = 500;
+const MAX_SNIPPET_LENGTH = 300;
+const ACCOUNTS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ACCOUNTS_ENABLED === "true";
 const sampleDrafts = [
   {
     label: "Project update",
@@ -17,6 +24,35 @@ const sampleDrafts = [
 ];
 const API_URL = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, "")
   || (import.meta.env.DEV ? "http://127.0.0.1:8000" : "");
+
+function readEmailAction() {
+  const params = new URLSearchParams(window.location.search);
+  if (params.has("verify")) return { type: "verify", uid: params.get("verify"), token: params.get("token") };
+  if (params.has("reset")) return { type: "reset", uid: params.get("reset"), token: params.get("token") };
+  return null;
+}
+
+function readInviteToken() {
+  return new URLSearchParams(window.location.hash.slice(1)).get("invite") || "";
+}
+
+function readWorkspaceId() {
+  try {
+    const value = Number(sessionStorage.getItem(WORKSPACE_ID_KEY));
+    return Number.isInteger(value) && value > 0 ? value : "";
+  } catch {
+    return "";
+  }
+}
+
+function storeWorkspaceId(value) {
+  try {
+    if (value) sessionStorage.setItem(WORKSPACE_ID_KEY, String(value));
+    else sessionStorage.removeItem(WORKSPACE_ID_KEY);
+  } catch {
+    // Workspace selection remains available for this tab when storage is unavailable.
+  }
+}
 
 function readSessionDraft(key = DRAFT_STORAGE_KEY) {
   try {
@@ -36,6 +72,58 @@ function persistSessionDraft(value, key = DRAFT_STORAGE_KEY) {
   }
 }
 
+function readSessionValue(key) {
+  try {
+    return sessionStorage.getItem(key) || "";
+  } catch {
+    return "";
+  }
+}
+
+function readSnippets() {
+  try {
+    const parsed = JSON.parse(sessionStorage.getItem(SNIPPETS_STORAGE_KEY) || "[]");
+    return Array.isArray(parsed)
+      ? parsed.filter((item) => item && typeof item.id === "string" && typeof item.text === "string").slice(0, 8)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function readAccount() {
+  try {
+    const account = JSON.parse(sessionStorage.getItem(ACCOUNT_STORAGE_KEY) || "null");
+    return account?.access && account?.refresh ? account : null;
+  } catch {
+    return null;
+  }
+}
+
+function storeAccount(account) {
+  try {
+    if (account) sessionStorage.setItem(ACCOUNT_STORAGE_KEY, JSON.stringify(account));
+    else sessionStorage.removeItem(ACCOUNT_STORAGE_KEY);
+  } catch {
+    // Account use stays available until this tab closes when storage is unavailable.
+  }
+}
+
+async function authenticatedRequest(config, account) {
+  const send = (access) => axios({
+    ...config,
+    headers: { ...config.headers, Authorization: `Bearer ${access}` },
+  });
+  try {
+    return { response: await send(account.access), account };
+  } catch (error) {
+    if (error.response?.status !== 401 || !account.refresh) throw error;
+    const refreshed = await axios.post(`${API_URL}/api/auth/token/refresh/`, { refresh: account.refresh });
+    const nextAccount = { ...account, access: refreshed.data.access, refresh: refreshed.data.refresh || account.refresh };
+    return { response: await send(nextAccount.access), account: nextAccount };
+  }
+}
+
 function App() {
   const [text, setText] = useState(readSessionDraft);
   const [draftStorageStatus, setDraftStorageStatus] = useState(() => {
@@ -47,6 +135,32 @@ function App() {
   });
   const [mode, setMode] = useState("rewrite");
   const [style, setStyle] = useState("clear");
+  const [voiceGuidance, setVoiceGuidance] = useState(() => readSessionValue(VOICE_STORAGE_KEY).slice(0, MAX_VOICE_LENGTH));
+  const [snippets, setSnippets] = useState(readSnippets);
+  const [snippetDraft, setSnippetDraft] = useState("");
+  const [account, setAccount] = useState(readAccount);
+  const [emailAction, setEmailAction] = useState(readEmailAction);
+  const [inviteToken, setInviteToken] = useState(readInviteToken);
+  const [accountMode, setAccountMode] = useState(() => emailAction?.type === "reset" ? "reset-password" : "register");
+  const [verificationPending, setVerificationPending] = useState(false);
+  const [accountEmail, setAccountEmail] = useState("");
+  const [accountPassword, setAccountPassword] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspace, setWorkspace] = useState(null);
+  const [activeWorkspaceId, setActiveWorkspaceId] = useState(readWorkspaceId);
+  const [loadedWorkspaceKey, setLoadedWorkspaceKey] = useState("");
+  const [invitations, setInvitations] = useState([]);
+  const [teamMembers, setTeamMembers] = useState([]);
+  const [teamUpdating, setTeamUpdating] = useState(false);
+  const [billingUpdating, setBillingUpdating] = useState(false);
+  const [inviteEmail, setInviteEmail] = useState("");
+  const [inviting, setInviting] = useState(false);
+  const [deleteAccountOpen, setDeleteAccountOpen] = useState(false);
+  const [deleteEmail, setDeleteEmail] = useState("");
+  const [deletePassword, setDeletePassword] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [accountMessage, setAccountMessage] = useState(() => emailAction?.type === "reset" ? "Choose a new password for your account." : "");
+  const [accountError, setAccountError] = useState("");
   const [result, setResult] = useState("");
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [previousDraft, setPreviousDraft] = useState(() => readSessionDraft(PREVIOUS_DRAFT_STORAGE_KEY));
@@ -57,11 +171,96 @@ function App() {
   const [copyLabel, setCopyLabel] = useState("Share result");
   const [copyStatus, setCopyStatus] = useState("");
   const textareaRef = useRef(null);
+  const accountPanelRef = useRef(null);
   const characterCount = [...text].length;
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const workspaceRequestKey = account ? `${account.email}:${activeWorkspaceId || "default"}` : "";
+  const workspaceLoading = Boolean(account && loadedWorkspaceKey !== workspaceRequestKey);
+
+  useEffect(() => {
+    if (!account || !API_URL) return undefined;
+    let active = true;
+    const workspaceQuery = activeWorkspaceId ? `?workspace_id=${activeWorkspaceId}` : "";
+    authenticatedRequest({ method: "get", url: `${API_URL}/api/workspace/${workspaceQuery}` }, account)
+      .then(({ response, account: updatedAccount }) => {
+        if (!active) return;
+        setAccount(updatedAccount);
+        storeAccount(updatedAccount);
+        const selected = response.data.workspace || (response.data.id ? response.data : null);
+        setWorkspace(selected ? { ...selected, workspaces: response.data.workspaces || selected.workspaces || [] } : null);
+        if (selected?.id) {
+          storeWorkspaceId(selected.id);
+          setVoiceGuidance(selected.voice_guidance);
+          setSnippets(selected.snippets.map((text, index) => ({ id: `saved-${index}`, text })));
+          persistSessionDraft(selected.voice_guidance, VOICE_STORAGE_KEY);
+          try { sessionStorage.setItem(SNIPPETS_STORAGE_KEY, JSON.stringify(selected.snippets.map((text, index) => ({ id: `saved-${index}`, text })))); } catch { /* in-memory account settings remain usable */ }
+        }
+        setAccountMessage(selected ? "Workspace settings loaded." : inviteToken ? "Sign in to accept your workspace invitation." : "Accept a workspace invitation to continue.");
+        setAccountError("");
+        setLoadedWorkspaceKey(workspaceRequestKey);
+      })
+      .catch((error) => {
+        if (!active) return;
+        if (error.response?.status === 404 && activeWorkspaceId) {
+          setActiveWorkspaceId("");
+          storeWorkspaceId(null);
+          return;
+        }
+        storeAccount(null);
+        setAccount(null);
+        setWorkspace(null);
+        setActiveWorkspaceId("");
+        storeWorkspaceId(null);
+        setLoadedWorkspaceKey("");
+        setAccountError("Your sign-in expired. Please sign in again.");
+      });
+    return () => { active = false; };
+  }, [account, workspaceRequestKey, inviteToken, activeWorkspaceId]);
+
+  useEffect(() => {
+    if (!account || !workspace?.id || workspace.role !== "owner" || !API_URL) return undefined;
+    let active = true;
+    authenticatedRequest({ method: "get", url: `${API_URL}/api/workspace/team/?workspace_id=${workspace.id}` }, account)
+      .then(({ response, account: updatedAccount }) => {
+        if (!active) return;
+        setAccount(updatedAccount);
+        storeAccount(updatedAccount);
+        setTeamMembers(response.data.members);
+        setInvitations(response.data.invitations || []);
+      })
+      .catch(() => { if (active) { setInvitations([]); setTeamMembers([]); } });
+    return () => { active = false; };
+  }, [account, workspace?.id, workspace?.role]);
+
+  useEffect(() => {
+    if (!emailAction || !ACCOUNTS_ENABLED || !API_URL) return undefined;
+    if (accountPanelRef.current) accountPanelRef.current.open = true;
+    if (emailAction.type === "reset") {
+      return undefined;
+    }
+    let active = true;
+    axios.post(`${API_URL}/api/auth/verify-email/`, { uid: emailAction.uid, token: emailAction.token })
+      .then((response) => {
+        if (!active) return;
+        setAccountMode("login");
+        setVerificationPending(false);
+        setAccountMessage(response.data.message);
+        setAccountError("");
+        setEmailAction(null);
+        window.history.replaceState({}, "", window.location.pathname);
+      })
+      .catch((requestError) => {
+        if (!active) return;
+        setAccountMode("login");
+        setAccountError(requestError.response?.data?.error || "Email verification link is invalid or expired.");
+        setEmailAction(null);
+        window.history.replaceState({}, "", window.location.pathname);
+      });
+    return () => { active = false; };
+  }, [emailAction]);
 
   const submit = async () => {
-    if (!API_URL || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed || loading) return;
+    if (!API_URL || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed || loading || workspaceLoading) return;
     setLoading(true);
     setError("");
     setResult("");
@@ -69,17 +268,28 @@ function App() {
     setCopyStatus("");
 
     try {
-      const response = await axios.post(`${API_URL}/api/rewrite/`, {
-        text, mode, style, adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed,
-      }, { timeout: REQUEST_TIMEOUT_MS });
+      const payload = { text, mode, style, voice_guidance: voiceGuidance, adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
+      const currentAccount = account
+        ? workspace?.role === "owner" ? await saveWorkspaceSettings() : account
+        : null;
+      if (account && workspace?.role === "owner" && !currentAccount) return;
+      const { response, account: updatedAccount } = currentAccount
+        ? await authenticatedRequest({ method: "post", url: `${API_URL}/api/rewrite/`, data: payload, timeout: REQUEST_TIMEOUT_MS }, currentAccount)
+        : { response: await axios.post(`${API_URL}/api/rewrite/`, payload, { timeout: REQUEST_TIMEOUT_MS }), account: null };
+      if (updatedAccount) {
+        setAccount(updatedAccount);
+        storeAccount(updatedAccount);
+      }
+      if (response.data.usage) setWorkspace((current) => current ? { ...current, usage: response.data.usage } : current);
       setResult(response.data.result);
     } catch (requestError) {
       const response = axios.isAxiosError(requestError) ? requestError.response : undefined;
       const code = axios.isAxiosError(requestError) ? requestError.code : undefined;
       const serverMessage = response?.data?.error;
+      if (response?.data?.usage) setWorkspace((current) => current ? { ...current, usage: response.data.usage } : current);
       setError(
         response?.status === 429
-          ? "You’ve reached the demo request limit. Try again later; your draft is still here."
+          ? (typeof serverMessage === "string" ? serverMessage : "You’ve reached the demo request limit. Try again later; your draft is still here.")
           : code === "ECONNABORTED" || code === "ETIMEDOUT"
             ? "The request timed out. Your draft is still here; wait a moment before retrying."
           : (typeof serverMessage === "string" && serverMessage) ||
@@ -89,6 +299,263 @@ function App() {
       );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const submitAccount = async (event) => {
+    event.preventDefault();
+    setAccountError("");
+    setAccountMessage("");
+    try {
+      if (accountMode === "reset-password") {
+        if (!emailAction) throw new Error("Open the password reset link from your email first.");
+        const response = await axios.post(`${API_URL}/api/auth/password-reset/confirm/`, {
+          uid: emailAction.uid, token: emailAction.token, new_password: accountPassword,
+        });
+        setAccountMode("login");
+        setAccountPassword("");
+        setEmailAction(null);
+        setAccountMessage(response.data.message);
+        window.history.replaceState({}, "", window.location.pathname);
+        return;
+      }
+      if (accountMode === "reset-request") {
+        const response = await axios.post(`${API_URL}/api/auth/password-reset/`, { email: accountEmail });
+        setAccountMessage(response.data.message);
+        return;
+      }
+      if (accountMode === "register") {
+        const response = await axios.post(`${API_URL}/api/auth/register/`, {
+          email: accountEmail, password: accountPassword, workspace_name: inviteToken ? "" : workspaceName,
+          ...(inviteToken ? { invitation_token: inviteToken } : {}),
+        });
+        setAccountMode("login");
+        setVerificationPending(true);
+        setAccountPassword("");
+        setAccountMessage(response.data.message);
+        return;
+      }
+      const response = await axios.post(`${API_URL}/api/auth/token/`, { email: accountEmail, password: accountPassword });
+      const nextAccount = { email: accountEmail.trim().toLowerCase(), access: response.data.access, refresh: response.data.refresh };
+      storeAccount(nextAccount);
+      setAccount(nextAccount);
+      setAccountPassword("");
+      setVerificationPending(false);
+      setAccountMessage("Signed in.");
+    } catch (requestError) {
+      const data = requestError.response?.data;
+      const message = typeof data?.error === "string" ? data.error
+        : Object.values(data || {}).flat().find((value) => typeof value === "string")
+          || "Could not sign in. Check the details and try again.";
+      setAccountError(message);
+    }
+  };
+
+  const resendVerification = async () => {
+    setAccountError("");
+    try {
+      const response = await axios.post(`${API_URL}/api/auth/verify-resend/`, { email: accountEmail, invitation_token: inviteToken });
+      setAccountMessage(response.data.message);
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || "Could not send a verification email right now.");
+    }
+  };
+
+  const saveWorkspaceSettings = async () => {
+    if (!account || !workspace?.id) return;
+    setAccountError("");
+    setAccountMessage("Saving workspace settings…");
+    try {
+      const { response, account: updatedAccount } = await authenticatedRequest({
+        method: "patch",
+        url: `${API_URL}/api/workspace/?workspace_id=${workspace?.id || activeWorkspaceId}`,
+        data: { voice_guidance: voiceGuidance, snippets: snippets.map((item) => item.text) },
+      }, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      setWorkspace(response.data);
+      setAccountMessage("Team voice and phrases saved to your workspace.");
+      return updatedAccount;
+    } catch {
+      setAccountError("Could not save workspace settings. Please try again.");
+      setAccountMessage("");
+      return null;
+    }
+  };
+
+  const sendWorkspaceInvitation = async (event) => {
+    event.preventDefault();
+    if (!account || !workspace?.id || inviting) return;
+    setInviting(true);
+    setAccountError("");
+    try {
+      const { response, account: updatedAccount } = await authenticatedRequest({
+        method: "post", url: `${API_URL}/api/workspace/invitations/`,
+        data: { workspace_id: workspace.id, email: inviteEmail },
+      }, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      setInviteEmail("");
+      setAccountMessage(response.data.message);
+      setInvitations((current) => [...current.filter((item) => item.email !== response.data.invitation.email), response.data.invitation]);
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || "Could not send the invitation.");
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const openBillingPage = async (kind) => {
+    if (!account || !workspace?.id || billingUpdating) return;
+    setBillingUpdating(true);
+    setAccountError("");
+    try {
+      const request = kind === "checkout"
+        ? { method: "post", url: `${API_URL}/api/billing/checkout/`, data: { workspace_id: workspace.id }, headers: { "Idempotency-Key": crypto.randomUUID() } }
+        : { method: "post", url: `${API_URL}/api/billing/portal/`, data: { workspace_id: workspace.id } };
+      const { response, account: updatedAccount } = await authenticatedRequest(request, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      const target = new URL(response.data.url);
+      if (target.protocol !== "https:" || !["checkout.stripe.com", "billing.stripe.com"].includes(target.hostname)) throw new Error("The billing provider returned an invalid link.");
+      window.location.assign(target.href);
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || requestError.message || "Billing is temporarily unavailable.");
+      setBillingUpdating(false);
+    }
+  };
+
+  const acceptWorkspaceInvitation = async () => {
+    if (!account || !inviteToken) return;
+    setAccountError("");
+    try {
+      const { response, account: updatedAccount } = await authenticatedRequest({
+        method: "post", url: `${API_URL}/api/workspace/invitations/accept/`, data: { token: inviteToken },
+      }, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      setActiveWorkspaceId(response.data.workspace_id);
+      storeWorkspaceId(response.data.workspace_id);
+      setInviteToken("");
+      window.history.replaceState({}, "", window.location.pathname);
+      setAccountMessage(response.data.message);
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || "Could not accept this invitation.");
+    }
+  };
+
+  const revokeInvitation = async (invitationId) => {
+    if (!account) return;
+    try {
+      const { account: updatedAccount } = await authenticatedRequest({
+        method: "delete", url: `${API_URL}/api/workspace/invitations/${invitationId}/`,
+      }, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      setInvitations((current) => current.filter((item) => item.id !== invitationId));
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || "Could not revoke this invitation.");
+    }
+  };
+
+  const updateTeamMember = async (member, action) => {
+    if (!account || !workspace?.id || teamUpdating) return;
+    const message = action === "transfer"
+      ? `Make ${member.email} the owner? You will become a member.`
+      : `Remove ${member.email} from this workspace?`;
+    if (!window.confirm(message)) return;
+    setTeamUpdating(true);
+    setAccountError("");
+    try {
+      const request = action === "transfer"
+        ? { method: "post", url: `${API_URL}/api/workspace/team/ownership/`, data: { workspace_id: workspace.id, member_id: member.user_id } }
+        : { method: "delete", url: `${API_URL}/api/workspace/team/${member.user_id}/?workspace_id=${workspace.id}` };
+      const { response, account: updatedAccount } = await authenticatedRequest(request, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      if (action === "transfer") {
+        setWorkspace((current) => current ? { ...current, role: "member" } : current);
+        setTeamMembers((current) => current.map((item) => ({
+          ...item,
+          role: item.user_id === member.user_id ? "owner" : item.email === account.email ? "member" : item.role,
+        })));
+        setInvitations([]);
+      } else {
+        setTeamMembers((current) => current.filter((item) => item.user_id !== member.user_id));
+      }
+      setAccountMessage(response.data?.message || `${member.email} removed from the workspace.`);
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || "Could not update the workspace team.");
+    } finally {
+      setTeamUpdating(false);
+    }
+  };
+
+  const signOut = async () => {
+    try {
+      if (account) {
+        let activeAccount = account;
+        const logoutRequest = () => axios.post(`${API_URL}/api/auth/logout/`, { refresh: activeAccount.refresh }, {
+          headers: { Authorization: `Bearer ${activeAccount.access}` },
+        });
+        try {
+          await logoutRequest();
+        } catch (error) {
+          if (error.response?.status !== 401) throw error;
+          const refreshed = await axios.post(`${API_URL}/api/auth/token/refresh/`, { refresh: activeAccount.refresh });
+          activeAccount = { ...activeAccount, access: refreshed.data.access, refresh: refreshed.data.refresh || activeAccount.refresh };
+          await logoutRequest();
+        }
+      }
+    } catch {
+      // Always clear this browser session, even if the service is unavailable.
+    } finally {
+      storeAccount(null);
+      setAccount(null);
+      setWorkspace(null);
+      setActiveWorkspaceId("");
+      storeWorkspaceId(null);
+      setLoadedWorkspaceKey("");
+      setDeleteAccountOpen(false);
+      setDeleteEmail("");
+      setDeletePassword("");
+      setAccountMessage("Signed out.");
+      setWorkspaceName("");
+      updateText("");
+      updateVoiceGuidance("");
+      saveSnippets([]);
+    }
+  };
+
+  const deleteMyAccount = async (event) => {
+    event.preventDefault();
+    if (!account || deletingAccount) return;
+    setDeletingAccount(true);
+    setAccountError("");
+    try {
+      await authenticatedRequest({
+        method: "delete", url: `${API_URL}/api/auth/account/`,
+        data: { email: deleteEmail, password: deletePassword },
+      }, account);
+      storeAccount(null);
+      setAccount(null);
+      setWorkspace(null);
+      setActiveWorkspaceId("");
+      storeWorkspaceId(null);
+      setLoadedWorkspaceKey("");
+      setDeleteAccountOpen(false);
+      setDeleteEmail("");
+      setDeletePassword("");
+      setAccountPassword("");
+      updateVoiceGuidance("");
+      saveSnippets([]);
+      setAccountMode("register");
+      setAccountMessage("Account and its workspace data were deleted. Your draft stays in this browser tab.");
+    } catch (requestError) {
+      const data = requestError.response?.data;
+      setAccountError(data?.error || data?.email || data?.password || "Could not delete this account.");
+    } finally {
+      setDeletingAccount(false);
     }
   };
 
@@ -127,6 +594,51 @@ function App() {
     setComparisonOpen(false);
     setError("");
     setCopyStatus("");
+  };
+
+  const updateVoiceGuidance = (value) => {
+    const nextValue = [...value].slice(0, MAX_VOICE_LENGTH).join("");
+    setVoiceGuidance(nextValue);
+    try {
+      if (nextValue) sessionStorage.setItem(VOICE_STORAGE_KEY, nextValue);
+      else sessionStorage.removeItem(VOICE_STORAGE_KEY);
+    } catch {
+      // Keep the current value usable even when browser storage is unavailable.
+    }
+    setResult("");
+    setComparisonOpen(false);
+    setError("");
+  };
+
+  const saveSnippets = (nextSnippets) => {
+    setSnippets(nextSnippets);
+    try {
+      sessionStorage.setItem(SNIPPETS_STORAGE_KEY, JSON.stringify(nextSnippets));
+    } catch {
+      // Snippets remain available for this render if browser storage is unavailable.
+    }
+  };
+
+  const addSnippet = (event) => {
+    event.preventDefault();
+    const value = snippetDraft.trim().slice(0, MAX_SNIPPET_LENGTH);
+    if (!value || snippets.length >= 8) return;
+    if (snippets.some((snippet) => snippet.text === value)) return;
+    saveSnippets([...snippets, { id: value, text: value }]);
+    setSnippetDraft("");
+  };
+
+  const insertSnippet = (value) => {
+    const start = textareaRef.current?.selectionStart ?? text.length;
+    const end = textareaRef.current?.selectionEnd ?? text.length;
+    const available = MAX_LENGTH - [...text].length + (end - start);
+    const inserted = [...value].slice(0, available).join("");
+    const nextText = `${text.slice(0, start)}${inserted}${text.slice(end)}`;
+    updateText(nextText);
+    requestAnimationFrame(() => {
+      textareaRef.current?.focus();
+      textareaRef.current?.setSelectionRange(start + inserted.length, start + inserted.length);
+    });
   };
 
   const updateMode = (value) => {
@@ -213,6 +725,96 @@ function App() {
             )}
           </div>
 
+          {ACCOUNTS_ENABLED && <details ref={accountPanelRef} className="account-settings">
+            <summary>{account ? `Workspace · ${account.email}` : "Create an account to save team settings online"}</summary>
+            {account ? (
+              <div className="account-connected">
+                {workspace?.workspaces?.length > 1 && <label className="workspace-switcher">Workspace
+                  <select value={workspace.id} onChange={(event) => {
+                    const nextId = Number(event.target.value);
+                    setActiveWorkspaceId(nextId);
+                    storeWorkspaceId(nextId);
+                  }}>
+                    {workspace.workspaces.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
+                  </select>
+                </label>}
+                <p><strong>{workspace?.name || "Your workspace"}</strong><span>{workspace?.role || "Member"}</span></p>
+                {inviteToken && <div className="invite-accept"><p>You’ve been invited to join a Draftloom workspace.</p><button className="primary-button" type="button" onClick={acceptWorkspaceInvitation}>Accept invitation</button></div>}
+                {workspace?.usage && <div className="usage-meter"><span>This month: {workspace.usage.used} / {workspace.usage.limit} AI requests</span><progress max={workspace.usage.limit} value={workspace.usage.used} aria-label="Monthly AI requests used" /></div>}
+                {workspace?.billing?.enabled && workspace?.role === "owner" && <div className="billing-panel">
+                  <p><strong>{workspace.billing.plan === "team" ? "Team" : "Free"} plan</strong><span>{workspace.billing.status}{workspace.billing.current_period_end ? ` · renews ${new Date(workspace.billing.current_period_end).toLocaleDateString()}` : ""}</span></p>
+                  <div className="account-actions">
+                    {workspace.billing.has_customer
+                      ? <button className="quiet-button" type="button" disabled={billingUpdating || workspaceLoading} onClick={() => openBillingPage("portal")}>{billingUpdating ? "Opening…" : "Manage subscription"}</button>
+                      : <button className="primary-button" type="button" disabled={billingUpdating || workspaceLoading} onClick={() => openBillingPage("checkout")}>{billingUpdating ? "Opening…" : "See Team plan"}</button>}
+                  </div>
+                </div>}
+                {workspace?.role === "owner" && <div className="workspace-invitations">
+                  <div className="team-list"><p>Workspace team</p>
+                    {teamMembers.map((member) => <div className="team-member" key={member.user_id}>
+                      <span>{member.email}{member.email === account.email ? " (you)" : ""}<small>{member.role}</small></span>
+                      {member.role === "member" && <div>
+                        <button className="quiet-button" type="button" disabled={teamUpdating || workspaceLoading} onClick={() => updateTeamMember(member, "transfer")}>Make owner</button>
+                        <button className="quiet-button" type="button" disabled={teamUpdating || workspaceLoading} onClick={() => updateTeamMember(member, "remove")}>Remove</button>
+                      </div>}
+                    </div>)}
+                  </div>
+                  <form className="invite-form" onSubmit={sendWorkspaceInvitation}>
+                    <label htmlFor="invite-email">Invite a teammate</label>
+                    <div><input id="invite-email" type="email" maxLength={254} required value={inviteEmail} onChange={(event) => setInviteEmail(event.target.value)} placeholder="teammate@company.com" /><button className="quiet-button" type="submit" disabled={inviting || workspaceLoading}>{inviting ? "Sending…" : "Send invite"}</button></div>
+                  </form>
+                  {invitations.map((item) => <p className="pending-invitation" key={item.id}><span>{item.email} · expires {new Date(item.expires_at).toLocaleDateString()}</span><button className="quiet-button" type="button" onClick={() => revokeInvitation(item.id)}>Revoke</button></p>)}
+                </div>}
+                <div className="account-actions">
+                  {workspace?.role === "owner" && <button className="primary-button" type="button" disabled={loading || workspaceLoading} onClick={saveWorkspaceSettings}>Save team settings</button>}
+                  <button className="quiet-button" type="button" disabled={loading} onClick={signOut}>Sign out</button>
+                  <button className="quiet-button delete-account-toggle" type="button" disabled={loading || deletingAccount} onClick={() => setDeleteAccountOpen((open) => !open)}>Delete account</button>
+                </div>
+                {deleteAccountOpen && <form className="account-delete-form" onSubmit={deleteMyAccount}>
+                  <p>This deletes your login, memberships, and sent invitations. A workspace you own is deleted only when it is empty; transfer ownership or remove other members first. Shared team settings and usage remain with the team. Your draft stays in this tab.</p>
+                  <label htmlFor="delete-account-email">Confirm account email</label>
+                  <input id="delete-account-email" type="email" autoComplete="username" required value={deleteEmail} onChange={(event) => setDeleteEmail(event.target.value)} />
+                  <label htmlFor="delete-account-password">Confirm password</label>
+                  <input id="delete-account-password" type="password" autoComplete="current-password" required value={deletePassword} onChange={(event) => setDeletePassword(event.target.value)} />
+                  <div><button className="danger-button" type="submit" disabled={deletingAccount}>{deletingAccount ? "Deleting…" : "Delete account and workspace data"}</button><button className="quiet-button" type="button" disabled={deletingAccount} onClick={() => setDeleteAccountOpen(false)}>Cancel</button></div>
+                </form>}
+              </div>
+            ) : (
+              <form className="account-form" onSubmit={submitAccount}>
+                {["register", "login"].includes(accountMode) ? (
+                  <div className="account-mode" role="group" aria-label="Choose account action">
+                    <button type="button" aria-pressed={accountMode === "register"} onClick={() => setAccountMode("register")}>Create workspace</button>
+                    <button type="button" aria-pressed={accountMode === "login"} onClick={() => setAccountMode("login")}>Sign in</button>
+                  </div>
+                ) : (
+                  <button className="quiet-button account-back" type="button" onClick={() => setAccountMode("login")}>Back to sign in</button>
+                )}
+                {accountMode !== "reset-password" && <>
+                  <label htmlFor="account-email">Work email</label>
+                  <input id="account-email" type="email" autoComplete="username" maxLength={254} required value={accountEmail} onChange={(event) => setAccountEmail(event.target.value)} />
+                </>}
+                {accountMode === "register" && !inviteToken && (
+                  <>
+                    <label htmlFor="workspace-name">Workspace name</label>
+                    <input id="workspace-name" maxLength={80} required value={workspaceName} onChange={(event) => setWorkspaceName(event.target.value)} placeholder="Your team or company" />
+                  </>
+                )}
+                {["register", "login", "reset-password"].includes(accountMode) && <>
+                  <label htmlFor="account-password">{accountMode === "reset-password" ? "New password" : "Password"}</label>
+                  <input id="account-password" type="password" autoComplete={accountMode === "login" ? "current-password" : "new-password"} minLength={12} maxLength={128} required value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} />
+                </>}
+                <button className="primary-button" type="submit" disabled={!API_URL}>
+                  {accountMode === "register" ? "Create workspace" : accountMode === "login" ? "Sign in" : accountMode === "reset-request" ? "Send reset link" : "Update password"}
+                </button>
+                {accountMode === "login" && <button className="quiet-button account-back" type="button" onClick={() => setAccountMode("reset-request")}>Forgot password?</button>}
+                {accountMode === "login" && verificationPending && <button className="quiet-button account-back" type="button" onClick={resendVerification}>Resend verification email</button>}
+                {accountMode === "register" && <p className="account-note">You’ll verify your email before you can sign in. Submitted drafts are not saved to the workspace.</p>}
+              </form>
+            )}
+            {accountMessage && <p className="account-message" role="status">{accountMessage}</p>}
+            {accountError && <p className="error-message" role="alert">{accountError}</p>}
+          </details>}
+
           <label className="field-label" htmlFor="source-text">Text to work on</label>
           <textarea
             id="source-text"
@@ -244,6 +846,38 @@ function App() {
             </div>
           )}
 
+          <details className="team-writing-settings">
+            <summary>Team voice &amp; reusable phrases <span>{account ? workspace?.role === "owner" ? "Managed for this workspace" : "Managed by the workspace owner" : "Optional · kept in this tab"}</span></summary>
+            <label className="field-label" htmlFor="team-voice">Voice guidance</label>
+            <textarea
+              className="voice-guidance"
+              id="team-voice"
+              maxLength={MAX_VOICE_LENGTH}
+              value={voiceGuidance}
+              disabled={loading || Boolean(account && workspace?.role !== "owner")}
+              placeholder="For example: Use plain English, avoid hype, and end with a clear next step."
+              onChange={(event) => updateVoiceGuidance(event.target.value)}
+              aria-describedby="team-voice-note"
+            />
+            <div className="editor-meta"><span id="team-voice-note">Sent to Gemini with your draft after consent.</span><span>{voiceGuidance.length} / {MAX_VOICE_LENGTH}</span></div>
+            <div className="snippet-heading"><span className="field-label">Reusable phrases</span><span>{snippets.length} / 8</span></div>
+            {snippets.length > 0 && (
+              <div className="sample-row saved-snippets" aria-label="Saved reusable phrases">
+                {snippets.map((snippet) => (
+                  <span className="snippet-item" key={snippet.id}>
+                    <button type="button" disabled={loading || text.length >= MAX_LENGTH} onClick={() => insertSnippet(snippet.text)} title="Insert at the cursor">{snippet.text}</button>
+                    <button className="snippet-remove" type="button" disabled={loading || Boolean(account && workspace?.role !== "owner")} aria-label={`Remove phrase ${snippet.text.slice(0, 40)}`} onClick={() => saveSnippets(snippets.filter((item) => item.id !== snippet.id))}>×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+            <form className="snippet-form" onSubmit={addSnippet}>
+              <label className="visually-hidden" htmlFor="new-snippet">New reusable phrase</label>
+              <input id="new-snippet" value={snippetDraft} maxLength={MAX_SNIPPET_LENGTH} disabled={loading || (account && workspace?.role !== "owner") || snippets.length >= 8} placeholder="Add a phrase your team uses…" onChange={(event) => setSnippetDraft(event.target.value)} />
+              <button className="quiet-button" type="submit" disabled={loading || (account && workspace?.role !== "owner") || !snippetDraft.trim() || snippets.length >= 8}>Save phrase</button>
+            </form>
+          </details>
+
           <div className="action-row">
             <div>
               <div className="action-controls">
@@ -269,7 +903,7 @@ function App() {
               className={`primary-button${loading ? " is-loading" : ""}`}
               type="button"
               onClick={submit}
-              disabled={!API_URL || loading || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed}
+              disabled={!API_URL || loading || workspaceLoading || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed}
             >
               {loading ? "Working…" : mode === "rewrite" ? "Rewrite text" : "Create summary"}
               {!loading && <span aria-hidden="true">↗</span>}
@@ -281,7 +915,7 @@ function App() {
             {!adultConfirmed ? "Confirm you’re 18 or older to continue." : !processingConfirmed ? "Agree to send the draft to Gemini before continuing." : "Your draft is sent only when you choose Rewrite or Summarise."}
           </p>
           <p className="privacy-note" id="privacy-note">
-            Your draft is kept in this browser tab so it can survive a reload; choose Clear draft to remove it. Text is sent to Google Gemini only after you choose an action and confirm processing. Don’t include sensitive or private details. On unpaid API use, Google may use prompts and responses to improve its services and human reviewers may process them. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Read Gemini’s terms</a>.
+            Your draft stays in this browser tab. {account ? "Signed-in workspace voice guidance and saved phrases are stored in your workspace." : "Unsynced voice guidance and saved phrases stay in this browser tab."} When you choose an action, the draft and workspace voice guidance are sent to Google Gemini after you confirm processing; a saved phrase is included only if you insert it into the draft. Don’t include sensitive, confidential, or personal details. On unpaid API use, Google may use prompts and responses to improve its services and human reviewers may process them. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Read Gemini’s terms</a>.
           </p>
           <label className="consent-row">
             <input type="checkbox" disabled={loading} checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} />
@@ -340,7 +974,7 @@ function App() {
 
       <footer className="page-footer">
         <span>Clear writing, one pass at a time.</span>
-        <span>18+ · Professional use</span>
+        <span>18+ · Professional use · <a href="/privacy.html">Privacy</a></span>
       </footer>
     </main>
   );

@@ -1,0 +1,2 @@
+[lint.per-file-ignores]
+"api/migrations/*.py" = ["RUF012"]
