@@ -36,6 +36,15 @@ class WorkspaceUsage(models.Model):
         constraints = (models.UniqueConstraint(fields=("workspace", "period"), name="unique_workspace_usage_period"),)
 
 
+class UserEmailPreferences(models.Model):
+    user = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="email_preferences")
+    onboarding_emails = models.BooleanField(default=False)
+    opted_in_at = models.DateTimeField(null=True, blank=True)
+    opted_out_at = models.DateTimeField(null=True, blank=True)
+    welcome_sent_at = models.DateTimeField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+
 class WorkspaceInvitation(models.Model):
     workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="invitations")
     invited_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="sent_workspace_invitations")

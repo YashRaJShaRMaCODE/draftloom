@@ -20,6 +20,7 @@ class RegisterSerializer(serializers.Serializer):
     password = serializers.CharField(write_only=True, trim_whitespace=False, min_length=12, max_length=128)
     workspace_name = serializers.CharField(max_length=80, trim_whitespace=True, required=False, allow_blank=True)
     invitation_token = serializers.CharField(write_only=True, required=False, max_length=128)
+    onboarding_emails = serializers.BooleanField(required=False, default=False)
 
     def validate_email(self, value):
         value = value.strip().lower()

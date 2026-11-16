@@ -2,6 +2,7 @@ from django.urls import path
 
 from .views import (
     accept_workspace_invitation,
+    account_email_preferences,
     create_billing_portal_session,
     create_checkout_session,
     remove_workspace_member,
@@ -20,6 +21,7 @@ urlpatterns = [
     path("billing/portal/", create_billing_portal_session, name="billing-portal"),
     path("billing/webhook/", stripe_webhook, name="billing-webhook"),
     path("workspace/", workspace_settings, name="workspace-settings"),
+    path("account/email-preferences/", account_email_preferences, name="account-email-preferences"),
     path("workspace/invitations/", workspace_invitations, name="workspace-invitations"),
     path("workspace/invitations/accept/", accept_workspace_invitation, name="accept-workspace-invitation"),
     path("workspace/invitations/<int:invitation_id>/", revoke_workspace_invitation, name="revoke-workspace-invitation"),

@@ -15,11 +15,28 @@ const ACCOUNTS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ACCOUNTS_EN
 const sampleDrafts = [
   {
     label: "Project update",
+    format: "general",
     text: "Hi team, the new onboarding flow is ready for review. I’m checking the mobile layout today and will share a link by 4 p.m. Please send any feedback before then.",
   },
   {
     label: "Meeting follow-up",
+    format: "general",
     text: "Thanks for today’s planning meeting. I’ll update the timeline by Thursday and confirm the open questions with engineering. Could you share the latest pricing note before then?",
+  },
+  {
+    label: "Customer email",
+    format: "customer_email",
+    text: "Hello, I’m following up on the proposal we discussed. Please let me know if you have any questions. I can share more detail if helpful.",
+  },
+  {
+    label: "Internal update",
+    format: "internal_update",
+    text: "The onboarding flow is ready for review. The mobile layout check is underway. Please send feedback before the next release-planning meeting. No release date has been confirmed.",
+  },
+  {
+    label: "Meeting recap",
+    format: "meeting_recap",
+    text: "Decision: keep the first release focused on onboarding. Open question: who owns the analytics review? Next step: share the updated scope with the team. No owner or due date was assigned during the meeting.",
   },
 ];
 const API_URL = import.meta.env.VITE_API_URL?.trim().replace(/\/+$/, "")
@@ -135,6 +152,7 @@ function App() {
   });
   const [mode, setMode] = useState("rewrite");
   const [style, setStyle] = useState("clear");
+  const [format, setFormat] = useState("general");
   const [voiceGuidance, setVoiceGuidance] = useState(() => readSessionValue(VOICE_STORAGE_KEY).slice(0, MAX_VOICE_LENGTH));
   const [snippets, setSnippets] = useState(readSnippets);
   const [snippetDraft, setSnippetDraft] = useState("");
@@ -146,6 +164,8 @@ function App() {
   const [accountEmail, setAccountEmail] = useState("");
   const [accountPassword, setAccountPassword] = useState("");
   const [workspaceName, setWorkspaceName] = useState("");
+  const [onboardingEmailsOptIn, setOnboardingEmailsOptIn] = useState(false);
+  const [emailPreferenceSaving, setEmailPreferenceSaving] = useState(false);
   const [workspace, setWorkspace] = useState(null);
   const [activeWorkspaceId, setActiveWorkspaceId] = useState(readWorkspaceId);
   const [loadedWorkspaceKey, setLoadedWorkspaceKey] = useState("");
@@ -186,6 +206,7 @@ function App() {
         if (!active) return;
         setAccount(updatedAccount);
         storeAccount(updatedAccount);
+        setOnboardingEmailsOptIn(Boolean(response.data.email_preferences?.onboarding_emails));
         const selected = response.data.workspace || (response.data.id ? response.data : null);
         setWorkspace(selected ? { ...selected, workspaces: response.data.workspaces || selected.workspaces || [] } : null);
         if (selected?.id) {
@@ -268,7 +289,7 @@ function App() {
     setCopyStatus("");
 
     try {
-      const payload = { text, mode, style, voice_guidance: voiceGuidance, adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
+      const payload = { text, mode, style, format, voice_guidance: voiceGuidance, adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
       const currentAccount = account
         ? workspace?.role === "owner" ? await saveWorkspaceSettings() : account
         : null;
@@ -327,11 +348,13 @@ function App() {
       if (accountMode === "register") {
         const response = await axios.post(`${API_URL}/api/auth/register/`, {
           email: accountEmail, password: accountPassword, workspace_name: inviteToken ? "" : workspaceName,
+          onboarding_emails: onboardingEmailsOptIn,
           ...(inviteToken ? { invitation_token: inviteToken } : {}),
         });
         setAccountMode("login");
         setVerificationPending(true);
         setAccountPassword("");
+        setOnboardingEmailsOptIn(false);
         setAccountMessage(response.data.message);
         return;
       }
@@ -348,6 +371,29 @@ function App() {
         : Object.values(data || {}).flat().find((value) => typeof value === "string")
           || "Could not sign in. Check the details and try again.";
       setAccountError(message);
+    }
+  };
+
+  const saveEmailPreferences = async (event) => {
+    event.preventDefault();
+    if (!account || !API_URL || emailPreferenceSaving) return;
+    setEmailPreferenceSaving(true);
+    setAccountError("");
+    try {
+      const { response, account: updatedAccount } = await authenticatedRequest({
+        method: "patch",
+        url: `${API_URL}/api/account/email-preferences/`,
+        data: { onboarding_emails: onboardingEmailsOptIn },
+      }, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      setAccountMessage(response.data.welcome_sent || !onboardingEmailsOptIn
+        ? "Email preference saved."
+        : "Preference saved. The getting-started email could not be delivered; save again to retry.");
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || "Could not save your email preference.");
+    } finally {
+      setEmailPreferenceSaving(false);
     }
   };
 
@@ -655,6 +701,13 @@ function App() {
     setError("");
   };
 
+  const updateFormat = (value) => {
+    setFormat(value);
+    setResult("");
+    setComparisonOpen(false);
+    setError("");
+  };
+
   const useResultAsDraft = () => {
     const nextText = [...result].slice(0, MAX_LENGTH).join("");
     setPreviousDraft(text);
@@ -692,6 +745,16 @@ function App() {
     }
   };
 
+  const openWorkspaceSignup = () => {
+    if (!ACCOUNTS_ENABLED || !accountPanelRef.current) return;
+    if (!account) setAccountMode("register");
+    accountPanelRef.current.open = true;
+    accountPanelRef.current.scrollIntoView({
+      behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+      block: "center",
+    });
+  };
+
   return (
     <main className="page-shell">
       <header className="topbar">
@@ -699,17 +762,77 @@ function App() {
           <span className="brand-mark" aria-hidden="true">W</span>
           <span>Clear writing</span>
         </a>
-        <span className="topbar-note">A quieter way to find the right words</span>
-        <span className="mode-badge"><span aria-hidden="true" /> Writing studio</span>
+        <nav className="site-nav" aria-label="Main navigation">
+          <a href="#how-it-works">How it works</a>
+          <a href="/tools/clear-copy-check.html">Free tools</a>
+          <a href="#workspace">Writing studio</a>
+          <a href="#answers">Answers</a>
+          <a href="/privacy.html">Privacy</a>
+        </nav>
       </header>
 
-      <section className="intro" id="top">
-        <p className="eyebrow">For work in progress</p>
-        <h1>Say it with <em>clarity.</em></h1>
-        <p className="intro-copy">Keep your meaning. Lose the friction. Rewrite a draft or find the heart of a longer note.</p>
+      <section className="marketing-hero" id="top" aria-labelledby="hero-title">
+        <div className="marketing-copy">
+          <p className="eyebrow">Clear writing for small teams</p>
+          <h1 id="hero-title">Say it clearly.<br /><em>Stay in your voice.</em></h1>
+          <p className="intro-copy">Turn rough drafts into clear messages and long notes into useful summaries, with voice guidance your team controls.</p>
+          <div className="hero-actions">
+            <a className="primary-button" href="#workspace">Try the writing studio <span aria-hidden="true">↘</span></a>
+            {ACCOUNTS_ENABLED
+              ? <button className="quiet-button" type="button" onClick={openWorkspaceSignup}>{account ? "Open your workspace" : "Create a team workspace"}</button>
+              : <p className="team-access-note" role="status">Team workspaces are not enabled on this live demo yet.</p>}
+          </div>
+          <p className="marketing-privacy">Your draft is sent to Google Gemini only after you choose Rewrite or Summarise and confirm.</p>
+        </div>
+        <aside className="hero-note" aria-label="Writing approach">
+          <span className="hero-note-mark" aria-hidden="true">“</span>
+          <p>Keep the meaning.<br />Make the next step clear.</p>
+          <span>Review every result before sharing.</span>
+        </aside>
       </section>
 
-      <section className="workspace" aria-label="Writing workspace">
+      <section className="workflow-section" id="how-it-works" aria-labelledby="workflow-title">
+        <div className="workflow-heading">
+          <h2 id="workflow-title">A simple flow from rough note to ready-to-review.</h2>
+          <p>Use it for a quick rewrite or a longer summary. Your team can save shared voice guidance and phrases in a workspace.</p>
+        </div>
+        <ol className="workflow-steps">
+          <li><span>01</span><strong>Bring a draft</strong><p>Start with your own words or a sample.</p></li>
+          <li><span>02</span><strong>Choose the direction</strong><p>Rewrite or summarise in a clear, warm, direct or formal tone.</p></li>
+          <li><span>03</span><strong>Review and share</strong><p>Edit the result, compare it with your original, then copy or download it.</p></li>
+        </ol>
+      </section>
+
+      <section className="answers-section" id="answers" aria-labelledby="answers-title">
+        <div className="workflow-heading">
+          <p className="eyebrow">Before you try it</p>
+          <h2 id="answers-title">Clear answers about your drafts.</h2>
+        </div>
+        <div className="answer-list">
+          <details>
+            <summary>Does Clear Writing send emails for me?</summary>
+            <p>No customer email is sent for you; that format only creates a draft to review, copy, and send yourself. A separate one-time getting-started email is optional and off by default.</p>
+          </details>
+          <details>
+            <summary>What happens to the text I enter?</summary>
+            <p>Your draft stays in this browser tab. It is sent to Google Gemini only after you choose Rewrite or Summarise and confirm processing. Don’t enter sensitive or confidential details.</p>
+          </details>
+          <details>
+            <summary>Can my team share writing preferences?</summary>
+            <p>Shared voice guidance and saved phrases are available in workspaces when team accounts are enabled. They are not enabled on the current live demo.</p>
+          </details>
+          <details>
+            <summary>Can I use a result without checking it?</summary>
+            <p>No. Review names, facts, tone, and commitments before sharing. Clear Writing helps with wording; you remain responsible for the final message.</p>
+          </details>
+          <details>
+            <summary>Can I subscribe on this demo?</summary>
+            <p>No. Paid accounts and subscriptions are not enabled here, and this demo does not take payments.</p>
+          </details>
+        </div>
+      </section>
+
+      <section className="workspace" id="workspace" aria-label="Writing workspace">
         <div className="editor-panel">
           <div className="panel-heading">
             <div>
@@ -739,8 +862,15 @@ function App() {
                   </select>
                 </label>}
                 <p><strong>{workspace?.name || "Your workspace"}</strong><span>{workspace?.role || "Member"}</span></p>
-                {inviteToken && <div className="invite-accept"><p>You’ve been invited to join a Draftloom workspace.</p><button className="primary-button" type="button" onClick={acceptWorkspaceInvitation}>Accept invitation</button></div>}
+                {inviteToken && <div className="invite-accept"><p>You’ve been invited to join a Clear Writing workspace.</p><button className="primary-button" type="button" onClick={acceptWorkspaceInvitation}>Accept invitation</button></div>}
                 {workspace?.usage && <div className="usage-meter"><span>This month: {workspace.usage.used} / {workspace.usage.limit} AI requests</span><progress max={workspace.usage.limit} value={workspace.usage.used} aria-label="Monthly AI requests used" /></div>}
+                <form className="email-preferences" onSubmit={saveEmailPreferences}>
+                  <label className="email-opt-in">
+                    <input type="checkbox" checked={workspaceLoading ? false : onboardingEmailsOptIn} disabled={workspaceLoading || emailPreferenceSaving} onChange={(event) => setOnboardingEmailsOptIn(event.target.checked)} />
+                    <span><strong>One optional getting-started email</strong><small>Only if you opt in. Turn it off here anytime; no recurring marketing emails.</small></span>
+                  </label>
+                  <button className="quiet-button" type="submit" disabled={workspaceLoading || emailPreferenceSaving}>{emailPreferenceSaving ? "Saving…" : "Save email preference"}</button>
+                </form>
                 {workspace?.billing?.enabled && workspace?.role === "owner" && <div className="billing-panel">
                   <p><strong>{workspace.billing.plan === "team" ? "Team" : "Free"} plan</strong><span>{workspace.billing.status}{workspace.billing.current_period_end ? ` · renews ${new Date(workspace.billing.current_period_end).toLocaleDateString()}` : ""}</span></p>
                   <div className="account-actions">
@@ -803,6 +933,10 @@ function App() {
                   <label htmlFor="account-password">{accountMode === "reset-password" ? "New password" : "Password"}</label>
                   <input id="account-password" type="password" autoComplete={accountMode === "login" ? "current-password" : "new-password"} minLength={12} maxLength={128} required value={accountPassword} onChange={(event) => setAccountPassword(event.target.value)} />
                 </>}
+                {accountMode === "register" && <label className="email-opt-in signup-email-opt-in">
+                  <input type="checkbox" checked={onboardingEmailsOptIn} onChange={(event) => setOnboardingEmailsOptIn(event.target.checked)} />
+                  <span><strong>Optional: send me one getting-started email</strong><small>Only after I verify my email. No recurring marketing emails; I can turn it off later in account settings.</small></span>
+                </label>}
                 <button className="primary-button" type="submit" disabled={!API_URL}>
                   {accountMode === "register" ? "Create workspace" : accountMode === "login" ? "Sign in" : accountMode === "reset-request" ? "Send reset link" : "Update password"}
                 </button>
@@ -839,7 +973,7 @@ function App() {
             <div className="sample-row" aria-label="Sample drafts">
               <span>Try a sample</span>
               {sampleDrafts.map((sample) => (
-                <button key={sample.label} type="button" onClick={() => updateText(sample.text)}>
+                <button key={sample.label} type="button" onClick={() => { updateFormat(sample.format); updateText(sample.text); }}>
                   {sample.label}
                 </button>
               ))}
@@ -894,9 +1028,18 @@ function App() {
                     <option value="formal">Formal</option>
                   </select>
                 </label>
+                <label className="format-control">
+                  <span>Output format</span>
+                  <select disabled={loading} value={format} onChange={(event) => updateFormat(event.target.value)}>
+                    <option value="general">General</option>
+                    <option value="customer_email">Customer email draft</option>
+                    <option value="internal_update">Internal update</option>
+                    <option value="meeting_recap">Meeting recap</option>
+                  </select>
+                </label>
               </div>
               <p className="mode-hint">
-                {mode === "rewrite" ? "Keep the idea. Make the wording clearer." : "Keep the key points. Leave out the extra detail."}
+                {format === "customer_email" ? "Draft only. Nothing is sent." : mode === "rewrite" ? "Keep the idea. Make the wording clearer." : "Keep the key points. Leave out the extra detail."}
               </p>
             </div>
             <button
@@ -974,7 +1117,7 @@ function App() {
 
       <footer className="page-footer">
         <span>Clear writing, one pass at a time.</span>
-        <span>18+ · Professional use · <a href="/privacy.html">Privacy</a></span>
+        <span>18+ · Professional use · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></span>
       </footer>
     </main>
   );

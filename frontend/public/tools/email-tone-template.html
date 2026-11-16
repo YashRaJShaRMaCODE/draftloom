@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Create a clear professional email outline in your browser. Choose a warm, direct, or formal tone; no text is uploaded.">
+  <meta property="og:title" content="Free Email Tone Planner | Clear Writing"><meta property="og:description" content="Build a concise email outline locally, with a tone you choose.">
+  <meta property="og:type" content="website"><link rel="canonical" href="https://clear-writing-studio.onrender.com/tools/email-tone-template.html"><meta name="leadhub-base-url" content="">
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"WebApplication","name":"Email Tone Planner","applicationCategory":"UtilitiesApplication","isAccessibleForFree":true,"operatingSystem":"Any"}</script>
+  <link rel="stylesheet" href="/tools/tools.css"><title>Free Email Tone Planner | Clear Writing</title>
+</head>
+<body><div class="wrap">
+  <nav class="nav" aria-label="Main navigation"><a class="brand" href="/">Clear Writing</a><a class="back" href="/tools/clear-copy-check.html">Try the clear copy check →</a></nav>
+  <main><p class="eyebrow">Free email template · Runs in your browser</p><h1>Say what you need, in your tone.</h1><p>Build a short email outline with a clear topic, context, and next step. The text is assembled on your device and is never uploaded.</p>
+    <form class="card" data-tool="email-builder"><label for="name">Recipient name <small>(optional)</small></label><input id="name" name="name" maxlength="80" autocomplete="off" placeholder="Name">
+      <label for="topic">What is the email about?</label><input id="topic" name="topic" maxlength="180" required placeholder="Project update, meeting request…">
+      <label for="context">One useful detail <small>(optional)</small></label><input id="context" name="context" maxlength="240" placeholder="A short reason or piece of context">
+      <label for="ask">What should happen next?</label><input id="ask" name="ask" maxlength="160" required placeholder="share a time that works for you">
+      <label for="tone">Tone</label><select id="tone" name="tone"><option value="warm">Warm</option><option value="direct">Direct</option><option value="formal">Formal</option></select>
+      <div class="actions"><button type="submit">Build my outline</button><a class="back" href="/">Open the full writing studio</a></div>
+      <section class="results" aria-label="Email outline"><h2>Email draft</h2><p class="output" id="email-result" aria-live="polite">Your outline will appear here. Review and personalize it before sending.</p><button class="secondary" type="button" data-copy="#email-result">Copy draft</button></section>
+    </form>
+    <form class="card" data-tool="leadhub-capture" hidden><h2>Want occasional writing tips?</h2><p>Optional. Your free tool works without subscribing. We’ll send a confirmation email first; you can unsubscribe from all product emails anytime.</p><label for="lead-email">Email address</label><input id="lead-email" name="email" type="email" autocomplete="email" required><label><input name="consent" type="checkbox" required> Email me occasional Clear Writing updates.</label><button type="submit">Subscribe</button><p data-lead-status aria-live="polite"></p></form>
+  </main><footer>Check names, facts, attachments, and tone before sending. This is a starting template, not a sent email. <a href="/privacy.html">Privacy</a></footer>
+</div><script type="module" src="/tools/tools.js"></script></body></html>

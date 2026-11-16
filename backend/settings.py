@@ -94,6 +94,8 @@ WSGI_APPLICATION = 'backend.wsgi.application'
 # https://docs.djangoproject.com/en/6.0/ref/settings/#databases
 
 DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+if not DEBUG and not DATABASE_URL:
+    raise ImproperlyConfigured("Set DATABASE_URL to PostgreSQL before starting the production service")
 if DATABASE_URL:
     parsed_database_url = urlsplit(DATABASE_URL)
     if parsed_database_url.scheme not in {"postgres", "postgresql"}:
@@ -163,9 +165,11 @@ DATA_UPLOAD_MAX_MEMORY_SIZE = 16 * 1024
 SECURE_CONTENT_TYPE_NOSNIFF = True
 SECURE_REFERRER_POLICY = "strict-origin-when-cross-origin"
 SECURE_SSL_REDIRECT = os.environ.get("SECURE_SSL_REDIRECT", "false").strip().lower() == "true"
+TRUST_RENDER_FORWARDED_PROTO = os.environ.get("TRUST_RENDER_FORWARDED_PROTO", "false").strip().lower() == "true"
+SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https") if TRUST_RENDER_FORWARDED_PROTO else None
 SESSION_COOKIE_SECURE = not DEBUG
 CSRF_COOKIE_SECURE = not DEBUG
-SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "0")) if SECURE_SSL_REDIRECT else 0
+SECURE_HSTS_SECONDS = int(os.environ.get("SECURE_HSTS_SECONDS", "0"))
 EMAIL_BACKEND = os.environ.get(
     "EMAIL_BACKEND",
     "django.core.mail.backends.console.EmailBackend" if DEBUG else "django.core.mail.backends.smtp.EmailBackend",
