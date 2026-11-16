@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { analyzeDraft, buildEmail } from './tools.js';
+import { analyzeDraft, buildEmail } from '../public/tools/tools.js';
 
 test('copy check counts words and identifies long sentences and filler phrases', () => {
   const result = analyzeDraft('I really need a review. This is a long sentence with enough words to cross the twenty four word threshold and become something the writer should consider breaking into two shorter sentences for clarity.');

@@ -36,6 +36,7 @@ Each signed-in free workspace is capped at 100 successful AI requests per UTC ca
 - Keep provider API credentials on the backend; the browser receives only the service URL.
 - Protect the static frontend with a restrictive Content Security Policy and cache hashed assets for a year.
 - The local build includes a plain-language privacy notice at `/privacy.html`; it still needs operator contact details and a jurisdiction-specific review before commercial launch.
+- Free, login-free tools run locally in the browser: [`/tools/clear-copy-check.html`](https://clear-writing-studio.onrender.com/tools/clear-copy-check.html) and [`/tools/email-tone-template.html`](https://clear-writing-studio.onrender.com/tools/email-tone-template.html). Optional email signup is hidden until the approved LeadHub HTTPS URL is configured.
 
 ## Stack
 
@@ -78,6 +79,7 @@ The API is available at `http://127.0.0.1:8000/api/rewrite/`; `/healthz/` report
 ```bash
 cd frontend
 npm ci
+npm test
 npm run dev
 ```
 
