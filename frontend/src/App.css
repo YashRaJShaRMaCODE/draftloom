@@ -196,6 +196,65 @@
   padding: 16px;
 }
 
+.message-template-library,
+.message-template-form,
+.template-fill-form {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 10px;
+  margin-top: 18px;
+  padding-top: 14px;
+}
+
+.message-template-library > p,
+.message-template-form > .editor-meta {
+  margin: 0;
+}
+
+.message-template-form input,
+.message-template-form textarea,
+.template-fill-form input {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.message-template-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.message-template-list li {
+  align-items: center;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  gap: 12px;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.message-template-list li > div:first-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.message-template-list li span {
+  color: var(--text-muted);
+  overflow-wrap: anywhere;
+}
+
+.template-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.template-fill-form h3 {
+  margin: 0;
+}
+
 .review-packet-panel h3,
 .review-packet-panel p {
   margin: 0 0 10px;

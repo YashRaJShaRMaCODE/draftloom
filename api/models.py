@@ -7,6 +7,7 @@ class Workspace(models.Model):
     owner = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="owned_workspaces")
     voice_guidance = models.CharField(max_length=500, blank=True)
     snippets = models.JSONField(default=list, blank=True)
+    message_templates = models.JSONField(default=list, blank=True)
     protected_terms = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
 

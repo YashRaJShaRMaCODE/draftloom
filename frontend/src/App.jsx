@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { buildReviewPacket } from "./utils/reviewPacket.js";
+import { renderTemplate, templateVariables } from "./utils/messageTemplates.js";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -162,6 +163,11 @@ function App() {
   const [protectedTermsText, setProtectedTermsText] = useState(() => readSessionValue(PROTECTED_TERMS_STORAGE_KEY));
   const [contextBrief, setContextBrief] = useState({ reader: "", goal: "", must_keep: "", avoid: "" });
   const [snippets, setSnippets] = useState(readSnippets);
+  const [messageTemplates, setMessageTemplates] = useState([]);
+  const [templateNameDraft, setTemplateNameDraft] = useState("");
+  const [templateBodyDraft, setTemplateBodyDraft] = useState("");
+  const [activeTemplate, setActiveTemplate] = useState(null);
+  const [templateValues, setTemplateValues] = useState({});
   const [snippetDraft, setSnippetDraft] = useState("");
   const [account, setAccount] = useState(readAccount);
   const [emailAction, setEmailAction] = useState(readEmailAction);
@@ -227,6 +233,7 @@ function App() {
           const selectedTerms = Array.isArray(selected.protected_terms) ? selected.protected_terms : [];
           setProtectedTermsText(selectedTerms.join("\n"));
           setSnippets(selected.snippets.map((text, index) => ({ id: `saved-${index}`, text })));
+          setMessageTemplates(Array.isArray(selected.message_templates) ? selected.message_templates : []);
           persistSessionDraft(selected.voice_guidance, VOICE_STORAGE_KEY);
           try { sessionStorage.setItem(PROTECTED_TERMS_STORAGE_KEY, selectedTerms.join("\n")); } catch { /* current workspace settings remain usable */ }
           try { sessionStorage.setItem(SNIPPETS_STORAGE_KEY, JSON.stringify(selected.snippets.map((text, index) => ({ id: `saved-${index}`, text })))); } catch { /* in-memory account settings remain usable */ }
@@ -439,7 +446,7 @@ function App() {
       const { response, account: updatedAccount } = await authenticatedRequest({
         method: "patch",
         url: `${API_URL}/api/workspace/?workspace_id=${workspace?.id || activeWorkspaceId}`,
-        data: { voice_guidance: voiceGuidance, snippets: snippets.map((item) => item.text), protected_terms: protectedTerms },
+        data: { voice_guidance: voiceGuidance, snippets: snippets.map((item) => item.text), protected_terms: protectedTerms, message_templates: messageTemplates },
       }, account);
       setAccount(updatedAccount);
       storeAccount(updatedAccount);
@@ -752,6 +759,32 @@ function App() {
     if (snippets.some((snippet) => snippet.text === value)) return;
     saveSnippets([...snippets, { id: value, text: value }]);
     setSnippetDraft("");
+  };
+
+  const addMessageTemplate = (event) => {
+    event.preventDefault();
+    const name = templateNameDraft.trim();
+    const body = templateBodyDraft.trim();
+    if (!name || !body || messageTemplates.length >= 20 || messageTemplates.some((template) => template.name.toLowerCase() === name.toLowerCase())) return;
+    setMessageTemplates([...messageTemplates, { name, body }]);
+    setTemplateNameDraft("");
+    setTemplateBodyDraft("");
+    setAccountMessage("Template added. Save team settings to share it with this workspace.");
+  };
+
+  const applyMessageTemplate = (event) => {
+    event.preventDefault();
+    if (!activeTemplate) return;
+    const rendered = renderTemplate(activeTemplate.body, templateValues);
+    if (text.length + rendered.length > MAX_LENGTH) {
+      setError(`This message would exceed the ${MAX_LENGTH.toLocaleString()}-character draft limit.`);
+      return;
+    }
+    setText((current) => current ? `${current}\n\n${rendered}` : rendered);
+    persistSessionDraft(text ? `${text}\n\n${rendered}` : rendered);
+    setActiveTemplate(null);
+    setTemplateValues({});
+    setError("");
   };
 
   const insertSnippet = (value) => {
@@ -1132,6 +1165,39 @@ function App() {
                     ))}
                   </ul>
                 ) : <p className="editor-meta">Saved versions appear after the team voice or reusable phrases change.</p>}
+              </section>
+            )}
+            {account && workspace?.id && (
+              <section className="message-template-library" aria-labelledby="message-template-title">
+                <div className="snippet-heading"><span id="message-template-title" className="field-label">Message templates</span><span>{messageTemplates.length} / 20</span></div>
+                <p className="editor-meta">Use {"{{"}variable_name{"}}"} placeholders for details that change. Values are inserted into your current draft.</p>
+                {messageTemplates.length > 0 && <ul className="message-template-list">
+                  {messageTemplates.map((template) => <li key={template.name}>
+                    <div><strong>{template.name}</strong><span>{template.body}</span></div>
+                    <div className="template-actions">
+                      <button className="quiet-button" type="button" disabled={loading || workspaceLoading} onClick={() => {
+                        setActiveTemplate(template);
+                        setTemplateValues(Object.fromEntries(templateVariables(template.body).map((name) => [name, ""])));
+                      }}>Use</button>
+                      {workspace?.role === "owner" && <button className="snippet-remove" type="button" aria-label={`Remove template ${template.name}`} onClick={() => setMessageTemplates(messageTemplates.filter((item) => item.name !== template.name))}>×</button>}
+                    </div>
+                  </li>)}
+                </ul>}
+                {workspace?.role === "owner" && <form className="message-template-form" onSubmit={addMessageTemplate}>
+                  <label className="field-label" htmlFor="template-name">New template name</label>
+                  <input id="template-name" value={templateNameDraft} maxLength={60} placeholder="For example: Pilot update" onChange={(event) => setTemplateNameDraft(event.target.value)} />
+                  <label className="field-label" htmlFor="template-body">Message</label>
+                  <textarea className="voice-guidance" id="template-body" value={templateBodyDraft} maxLength={2000} placeholder="Hi {{customer_name}}, your {{product}} update is ready." onChange={(event) => setTemplateBodyDraft(event.target.value)} />
+                  <button className="quiet-button" type="submit" disabled={!templateNameDraft.trim() || !templateBodyDraft.trim() || messageTemplates.length >= 20 || messageTemplates.some((item) => item.name.toLowerCase() === templateNameDraft.trim().toLowerCase())}>Add template</button>
+                  <span className="editor-meta">Save team settings to share new templates with workspace members.</span>
+                </form>}
+                {activeTemplate && <form className="template-fill-form" onSubmit={applyMessageTemplate}>
+                  <h3>Fill: {activeTemplate.name}</h3>
+                  {templateVariables(activeTemplate.body).map((name) => <label className="field-label" key={name}>{name.replaceAll("_", " ")}
+                    <input required value={templateValues[name] || ""} maxLength={MAX_LENGTH} onChange={(event) => setTemplateValues({ ...templateValues, [name]: event.target.value })} />
+                  </label>)}
+                  <div className="template-actions"><button className="copy-button" type="submit">Insert into draft</button><button className="quiet-button" type="button" onClick={() => setActiveTemplate(null)}>Cancel</button></div>
+                </form>}
               </section>
             )}
           </details>

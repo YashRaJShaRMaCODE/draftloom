@@ -1,4 +1,5 @@
 import hashlib
+import re
 
 from django.contrib.auth import get_user_model
 from django.contrib.auth.password_validation import validate_password
@@ -64,10 +65,13 @@ class WorkspaceSettingsSerializer(serializers.ModelSerializer):
         allow_empty=True,
         required=False,
     )
+    message_templates = serializers.ListField(
+        child=serializers.DictField(), max_length=20, allow_empty=True, required=False,
+    )
 
     class Meta:
         model = Workspace
-        fields = ("id", "name", "voice_guidance", "snippets", "protected_terms")
+        fields = ("id", "name", "voice_guidance", "snippets", "protected_terms", "message_templates")
         read_only_fields = ("id",)
 
     def validate_snippets(self, value):
@@ -75,6 +79,25 @@ class WorkspaceSettingsSerializer(serializers.ModelSerializer):
 
     def validate_protected_terms(self, value):
         return list(dict.fromkeys(term.strip() for term in value))
+
+    def validate_message_templates(self, value):
+        normalized = []
+        names = set()
+        for item in value:
+            if not isinstance(item, dict) or set(item) != {"name", "body"}:
+                raise serializers.ValidationError("Each template needs only a name and body.")
+            name = item["name"].strip() if isinstance(item["name"], str) else ""
+            body = item["body"].strip() if isinstance(item["body"], str) else ""
+            if not name or len(name) > 60 or not body or len(body) > 2000:
+                raise serializers.ValidationError("Template names must be 1–60 characters and message bodies 1–2,000 characters.")
+            if name.casefold() in names:
+                raise serializers.ValidationError("Template names must be unique.")
+            names.add(name.casefold())
+            malformed = re.sub(r"\{\{[a-z][a-z0-9_]{0,39}\}\}", "", body)
+            if "{{" in malformed or "}}" in malformed:
+                raise serializers.ValidationError("Use placeholders like {{customer_name}} with lowercase letters, numbers, and underscores.")
+            normalized.append({"name": name, "body": body})
+        return normalized
 
 
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):

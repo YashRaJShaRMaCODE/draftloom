@@ -300,6 +300,21 @@ class RewriteApiTests(TestCase):
         self.assertEqual(response.status_code, 200, response.data)
         self.assertEqual(WorkspaceStyleGuideVersion.objects.filter(workspace=workspace).count(), 20)
 
+    def test_workspace_templates_are_validated_and_saved_by_the_owner(self):
+        user = get_user_model().objects.create_user(username="owner@example.com", email="owner@example.com", password="safe-password-8472")
+        workspace = Workspace.objects.create(name="Northstar", owner=user)
+        WorkspaceMembership.objects.create(workspace=workspace, user=user, role="owner")
+        self.client.force_authenticate(user=user)
+        valid = [{"name": "Pilot update", "body": "Hi {{customer_name}}, the pilot is ready."}]
+
+        saved = self.client.patch(f"/api/workspace/?workspace_id={workspace.pk}", {"message_templates": valid}, format="json")
+        self.assertEqual(saved.status_code, 200, saved.data)
+        self.assertEqual(saved.data["message_templates"], valid)
+        duplicate = self.client.patch(f"/api/workspace/?workspace_id={workspace.pk}", {"message_templates": [*valid, {"name": "pilot UPDATE", "body": "Another message"}]}, format="json")
+        malformed = self.client.patch(f"/api/workspace/?workspace_id={workspace.pk}", {"message_templates": [{"name": "Broken", "body": "Hi {{Customer}}"}]}, format="json")
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(malformed.status_code, 400)
+
     def test_workspace_settings_do_not_cross_account_boundaries(self):
         user = get_user_model().objects.create_user(username="outside@example.com", email="outside@example.com", password="safe-password-8472")
         self.client.force_authenticate(user=user)
