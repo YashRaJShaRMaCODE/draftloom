@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { analyzeDraft, buildEmail } from '../public/tools/tools.js';
 import { buildReviewPacket } from '../src/utils/reviewPacket.js';
 import { renderTemplate, templateVariables } from '../src/utils/messageTemplates.js';
+import { isDraftExpired, purgeExpiredDrafts } from '../src/utils/draftRetention.js';
 
 test('copy check counts words and identifies long sentences and filler phrases', () => {
   const result = analyzeDraft('I really need a review. This is a long sentence with enough words to cross the twenty four word threshold and become something the writer should consider breaking into two shorter sentences for clarity.');
@@ -34,4 +35,20 @@ test('message templates find unique placeholders and render values as plain text
   const body = 'Hi {{customer_name}}, your {{product}} update is ready, {{customer_name}}.';
   assert.deepEqual(templateVariables(body), ['customer_name', 'product']);
   assert.equal(renderTemplate(body, { customer_name: '<Alex>', product: 'pilot' }), 'Hi <Alex>, your pilot update is ready, <Alex>.');
+});
+
+test('draft retention expires at the selected deadline and ignores missing timestamps', () => {
+  const now = 1_800_000_000_000;
+  assert.equal(isDraftExpired(now - 15 * 60_000 + 1, 15, now), false);
+  assert.equal(isDraftExpired(now - 15 * 60_000, 15, now), true);
+  assert.equal(isDraftExpired('', 15, now), false);
+  const store = new Map([
+    ['clear-writing:draft:v1', 'private draft'],
+    ['clear-writing:draft:v1:saved-at', String(now - 15 * 60_000)],
+    ['clear-writing:previous-draft:v1', 'previous'],
+    ['clear-writing:previous-draft:v1:saved-at', String(now - 10_000)],
+  ]);
+  const storage = { getItem: (key) => store.get(key) || null, removeItem: (key) => store.delete(key) };
+  assert.equal(purgeExpiredDrafts(storage, 15, now), true);
+  assert.equal(store.size, 0);
 });

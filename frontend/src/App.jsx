@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { buildReviewPacket } from "./utils/reviewPacket.js";
 import { renderTemplate, templateVariables } from "./utils/messageTemplates.js";
+import { DRAFT_RETENTION_OPTIONS, purgeExpiredDrafts } from "./utils/draftRetention.js";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -12,6 +13,8 @@ const PROTECTED_TERMS_STORAGE_KEY = "clear-writing:protected-terms:v1";
 const SNIPPETS_STORAGE_KEY = "clear-writing:snippets:v1";
 const ACCOUNT_STORAGE_KEY = "clear-writing:account:v1";
 const WORKSPACE_ID_KEY = "clear-writing:workspace-id:v1";
+const DRAFT_RETENTION_KEY = "clear-writing:draft-retention-minutes:v1";
+const DEFAULT_DRAFT_RETENTION_MINUTES = 240;
 const MAX_VOICE_LENGTH = 500;
 const MAX_SNIPPET_LENGTH = 300;
 const MAX_PROTECTED_TERMS = 20;
@@ -79,6 +82,10 @@ function storeWorkspaceId(value) {
 
 function readSessionDraft(key = DRAFT_STORAGE_KEY) {
   try {
+    if ([DRAFT_STORAGE_KEY, PREVIOUS_DRAFT_STORAGE_KEY].includes(key)) {
+      const retention = Number(localStorage.getItem(DRAFT_RETENTION_KEY)) || DEFAULT_DRAFT_RETENTION_MINUTES;
+      if (purgeExpiredDrafts(sessionStorage, retention)) return "";
+    }
     return [...(sessionStorage.getItem(key) || "")].slice(0, MAX_LENGTH).join("");
   } catch {
     return "";
@@ -89,6 +96,10 @@ function persistSessionDraft(value, key = DRAFT_STORAGE_KEY) {
   try {
     if (value) sessionStorage.setItem(key, value);
     else sessionStorage.removeItem(key);
+    if ([DRAFT_STORAGE_KEY, PREVIOUS_DRAFT_STORAGE_KEY].includes(key)) {
+      if (value) sessionStorage.setItem(`${key}:saved-at`, String(Date.now()));
+      else sessionStorage.removeItem(`${key}:saved-at`);
+    }
     return true;
   } catch {
     return false;
@@ -156,6 +167,12 @@ function App() {
       return "unavailable";
     }
   });
+  const [draftRetentionMinutes, setDraftRetentionMinutes] = useState(() => {
+    try {
+      const saved = Number(localStorage.getItem(DRAFT_RETENTION_KEY));
+      return DRAFT_RETENTION_OPTIONS.includes(saved) ? saved : DEFAULT_DRAFT_RETENTION_MINUTES;
+    } catch { return DEFAULT_DRAFT_RETENTION_MINUTES; }
+  });
   const [mode, setMode] = useState("rewrite");
   const [style, setStyle] = useState("clear");
   const [format, setFormat] = useState("general");
@@ -214,6 +231,27 @@ function App() {
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
   const workspaceRequestKey = account ? `${account.email}:${activeWorkspaceId || "default"}` : "";
   const workspaceLoading = Boolean(account && loadedWorkspaceKey !== workspaceRequestKey);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      try {
+        if (purgeExpiredDrafts(sessionStorage, draftRetentionMinutes)) {
+          setText("");
+          setPreviousDraft("");
+          setDraftStorageStatus("ready");
+          setCopyStatus("Draft cleared after its retention period.");
+        }
+      } catch { /* current in-memory draft remains usable if browser storage is unavailable */ }
+    }, 30_000);
+    return () => window.clearInterval(timer);
+  }, [draftRetentionMinutes]);
+
+  const changeDraftRetention = (value) => {
+    const minutes = Number(value);
+    if (!DRAFT_RETENTION_OPTIONS.includes(minutes)) return;
+    setDraftRetentionMinutes(minutes);
+    try { localStorage.setItem(DRAFT_RETENTION_KEY, String(minutes)); } catch { /* current-tab setting remains active */ }
+  };
 
   useEffect(() => {
     if (!account || !API_URL) return undefined;
@@ -1096,6 +1134,13 @@ function App() {
             <span className={`draft-storage-status${draftStorageStatus === "unavailable" ? " is-unavailable" : ""}`}>
               {draftStorageStatus === "unavailable" ? "Autosave unavailable · keep this tab open" : text ? "Saved in this tab" : "Autosaves in this tab"}
             </span>
+            <label className="draft-retention-control" htmlFor="draft-retention">Keep drafts for
+              <select id="draft-retention" value={draftRetentionMinutes} onChange={(event) => changeDraftRetention(event.target.value)}>
+                <option value={15}>15 minutes</option>
+                <option value={240}>4 hours</option>
+                <option value={1440}>24 hours</option>
+              </select>
+            </label>
             <span id="keyboard-hint">⌘ / Ctrl + Enter to run</span>
           </div>
 
@@ -1348,7 +1393,7 @@ function App() {
           <span className="visually-hidden" role="status" aria-live="polite">{copyStatus}</span>
           <div className="result-footer">
             <span>AI-generated. Check that it still says what you mean.</span>
-            <span>Draft stays in this tab only.</span>
+            <span>Draft stays in this tab and expires after your selected period.</span>
           </div>
         </section>
       </section>

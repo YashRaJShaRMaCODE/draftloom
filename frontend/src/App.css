@@ -255,6 +255,23 @@
   margin: 0;
 }
 
+.draft-retention-control {
+  align-items: center;
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.draft-retention-control select {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text);
+  font: inherit;
+  min-height: 32px;
+  padding: 4px 8px;
+}
+
 .review-packet-panel h3,
 .review-packet-panel p {
   margin: 0 0 10px;
