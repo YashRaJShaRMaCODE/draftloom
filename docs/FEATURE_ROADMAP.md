@@ -6,7 +6,7 @@ Impact/effort are estimates, not buyer evidence. Competitor gaps below summarize
 
 | # | New feature | User problem solved | Competitor gap addressed | Impact | Effort |
 |---:|---|---|---|---|---|
-| 1 | Protected terminology glossary with exact-term checks | Prevents product names and approved phrases changing during rewrite | False flags for technical terms and proper names | High | Medium |
+| 1 | Protected terminology glossary with exact-term checks | Prevents product names and approved phrases changing during rewrite | False flags for technical terms and proper names | High | Medium | **Implemented locally** — owner-managed workspace terms, anonymous session terms, API enforcement and regression tests; not deployed. |
 | 2 | Structured context brief (reader, goal, must-keep facts, avoid list) | Reduces irrelevant drafts and meaning drift | Weak context understanding | High | Medium |
 | 3 | Change rationale view linked to each changed sentence | Lets a reviewer verify the rewrite quickly | Inaccurate or over-editing suggestions | High | Medium |
 | 4 | Workspace style-guide versions with rollback | Keeps approved voice stable as guidance evolves | Generic or repetitive outputs | High | High |
@@ -23,6 +23,8 @@ Impact/effort are estimates, not buyer evidence. Competitor gaps below summarize
 | 15 | Regional English/language variant control with glossary protection | Helps teams serve different locales without changing key terms | Language and context mismatch | Medium | High |
 
 ## Current delivery status
+
+Feature 1 is implemented locally. Signed-in terms are workspace-scoped and editable only by the workspace owner; anonymous terms stay in the browser session. The API checks case and spelling preservation after generation and rejects a rewrite that drops a protected term. See `ARCHITECTURE.md` and the regression tests in `api/tests.py`.
 
 The two login-free SEO lead magnets are implemented in the app repo as separate pages: Clear Copy Check and Email Tone Planner. Their functions have unit tests and are listed in the sitemap. Optional LeadHub capture is present but hidden until a verified HTTPS LeadHub URL is configured and the privacy/sender setup is approved. They do not upload draft text.
 

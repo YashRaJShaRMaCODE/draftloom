@@ -6,11 +6,14 @@ const REQUEST_TIMEOUT_MS = 45_000;
 const DRAFT_STORAGE_KEY = "clear-writing:draft:v1";
 const PREVIOUS_DRAFT_STORAGE_KEY = "clear-writing:previous-draft:v1";
 const VOICE_STORAGE_KEY = "clear-writing:team-voice:v1";
+const PROTECTED_TERMS_STORAGE_KEY = "clear-writing:protected-terms:v1";
 const SNIPPETS_STORAGE_KEY = "clear-writing:snippets:v1";
 const ACCOUNT_STORAGE_KEY = "clear-writing:account:v1";
 const WORKSPACE_ID_KEY = "clear-writing:workspace-id:v1";
 const MAX_VOICE_LENGTH = 500;
 const MAX_SNIPPET_LENGTH = 300;
+const MAX_PROTECTED_TERMS = 20;
+const MAX_PROTECTED_TERM_LENGTH = 80;
 const ACCOUNTS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ACCOUNTS_ENABLED === "true";
 const sampleDrafts = [
   {
@@ -154,6 +157,7 @@ function App() {
   const [style, setStyle] = useState("clear");
   const [format, setFormat] = useState("general");
   const [voiceGuidance, setVoiceGuidance] = useState(() => readSessionValue(VOICE_STORAGE_KEY).slice(0, MAX_VOICE_LENGTH));
+  const [protectedTermsText, setProtectedTermsText] = useState(() => readSessionValue(PROTECTED_TERMS_STORAGE_KEY));
   const [snippets, setSnippets] = useState(readSnippets);
   const [snippetDraft, setSnippetDraft] = useState("");
   const [account, setAccount] = useState(readAccount);
@@ -212,8 +216,11 @@ function App() {
         if (selected?.id) {
           storeWorkspaceId(selected.id);
           setVoiceGuidance(selected.voice_guidance);
+          const selectedTerms = Array.isArray(selected.protected_terms) ? selected.protected_terms : [];
+          setProtectedTermsText(selectedTerms.join("\n"));
           setSnippets(selected.snippets.map((text, index) => ({ id: `saved-${index}`, text })));
           persistSessionDraft(selected.voice_guidance, VOICE_STORAGE_KEY);
+          try { sessionStorage.setItem(PROTECTED_TERMS_STORAGE_KEY, selectedTerms.join("\n")); } catch { /* current workspace settings remain usable */ }
           try { sessionStorage.setItem(SNIPPETS_STORAGE_KEY, JSON.stringify(selected.snippets.map((text, index) => ({ id: `saved-${index}`, text })))); } catch { /* in-memory account settings remain usable */ }
         }
         setAccountMessage(selected ? "Workspace settings loaded." : inviteToken ? "Sign in to accept your workspace invitation." : "Accept a workspace invitation to continue.");
@@ -289,7 +296,7 @@ function App() {
     setCopyStatus("");
 
     try {
-      const payload = { text, mode, style, format, voice_guidance: voiceGuidance, adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
+      const payload = { text, mode, style, format, voice_guidance: voiceGuidance, protected_terms: protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean), adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
       const currentAccount = account
         ? workspace?.role === "owner" ? await saveWorkspaceSettings() : account
         : null;
@@ -409,18 +416,23 @@ function App() {
 
   const saveWorkspaceSettings = async () => {
     if (!account || !workspace?.id) return;
+    const protectedTerms = protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean);
+    if (protectedTerms.length > MAX_PROTECTED_TERMS || protectedTerms.some((term) => term.length > MAX_PROTECTED_TERM_LENGTH)) {
+      setAccountError(`Use up to ${MAX_PROTECTED_TERMS} protected terms, with no more than ${MAX_PROTECTED_TERM_LENGTH} characters each.`);
+      return;
+    }
     setAccountError("");
     setAccountMessage("Saving workspace settings…");
     try {
       const { response, account: updatedAccount } = await authenticatedRequest({
         method: "patch",
         url: `${API_URL}/api/workspace/?workspace_id=${workspace?.id || activeWorkspaceId}`,
-        data: { voice_guidance: voiceGuidance, snippets: snippets.map((item) => item.text) },
+        data: { voice_guidance: voiceGuidance, snippets: snippets.map((item) => item.text), protected_terms: protectedTerms },
       }, account);
       setAccount(updatedAccount);
       storeAccount(updatedAccount);
       setWorkspace(response.data);
-      setAccountMessage("Team voice and phrases saved to your workspace.");
+      setAccountMessage("Team writing settings saved to your workspace.");
       return updatedAccount;
     } catch {
       setAccountError("Could not save workspace settings. Please try again.");
@@ -569,6 +581,7 @@ function App() {
       setWorkspaceName("");
       updateText("");
       updateVoiceGuidance("");
+      updateProtectedTerms("");
       saveSnippets([]);
     }
   };
@@ -594,6 +607,7 @@ function App() {
       setDeletePassword("");
       setAccountPassword("");
       updateVoiceGuidance("");
+      updateProtectedTerms("");
       saveSnippets([]);
       setAccountMode("register");
       setAccountMessage("Account and its workspace data were deleted. Your draft stays in this browser tab.");
@@ -650,6 +664,19 @@ function App() {
       else sessionStorage.removeItem(VOICE_STORAGE_KEY);
     } catch {
       // Keep the current value usable even when browser storage is unavailable.
+    }
+    setResult("");
+    setComparisonOpen(false);
+    setError("");
+  };
+
+  const updateProtectedTerms = (value) => {
+    setProtectedTermsText(value);
+    try {
+      if (value) sessionStorage.setItem(PROTECTED_TERMS_STORAGE_KEY, value);
+      else sessionStorage.removeItem(PROTECTED_TERMS_STORAGE_KEY);
+    } catch {
+      // Keep current terms usable even when browser storage is unavailable.
     }
     setResult("");
     setComparisonOpen(false);
@@ -994,6 +1021,18 @@ function App() {
               aria-describedby="team-voice-note"
             />
             <div className="editor-meta"><span id="team-voice-note">Sent to Gemini with your draft after consent.</span><span>{voiceGuidance.length} / {MAX_VOICE_LENGTH}</span></div>
+            <label className="field-label protected-terms-label" htmlFor="protected-terms">Protected product terms <span>One per line · up to {MAX_PROTECTED_TERMS}</span></label>
+            <textarea
+              className="voice-guidance protected-terms"
+              id="protected-terms"
+              maxLength={MAX_PROTECTED_TERMS * (MAX_PROTECTED_TERM_LENGTH + 1)}
+              value={protectedTermsText}
+              disabled={loading || Boolean(account && workspace?.role !== "owner")}
+              placeholder={"Acme Cloud\nNorthstar API"}
+              onChange={(event) => updateProtectedTerms(event.target.value)}
+              aria-describedby="protected-terms-note"
+            />
+            <div className="editor-meta"><span id="protected-terms-note">If a term appears in your draft and changes, the result is rejected. Owners must save workspace settings first. Terms go to Gemini only after you approve processing.</span><span>{protectedTermsText.split(/\r?\n/).filter((term) => term.trim()).length} / {MAX_PROTECTED_TERMS}</span></div>
             <div className="snippet-heading"><span className="field-label">Reusable phrases</span><span>{snippets.length} / 8</span></div>
             {snippets.length > 0 && (
               <div className="sample-row saved-snippets" aria-label="Saved reusable phrases">
@@ -1058,7 +1097,7 @@ function App() {
             {!adultConfirmed ? "Confirm you’re 18 or older to continue." : !processingConfirmed ? "Agree to send the draft to Gemini before continuing." : "Your draft is sent only when you choose Rewrite or Summarise."}
           </p>
           <p className="privacy-note" id="privacy-note">
-            Your draft stays in this browser tab. {account ? "Signed-in workspace voice guidance and saved phrases are stored in your workspace." : "Unsynced voice guidance and saved phrases stay in this browser tab."} When you choose an action, the draft and workspace voice guidance are sent to Google Gemini after you confirm processing; a saved phrase is included only if you insert it into the draft. Don’t include sensitive, confidential, or personal details. On unpaid API use, Google may use prompts and responses to improve its services and human reviewers may process them. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Read Gemini’s terms</a>.
+            Your draft stays in this browser tab. {account ? "Signed-in workspace voice guidance, protected terms, and saved phrases are stored in your workspace." : "Unsynced voice guidance, protected terms, and saved phrases stay in this browser tab."} When you choose an action, the draft, protected terms, and workspace voice guidance are sent to Google Gemini after you confirm processing; a saved phrase is included only if you insert it into the draft. Don’t include sensitive, confidential, or personal details. On unpaid API use, Google may use prompts and responses to improve its services and human reviewers may process them. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Read Gemini’s terms</a>.
           </p>
           <label className="consent-row">
             <input type="checkbox" disabled={loading} checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} />

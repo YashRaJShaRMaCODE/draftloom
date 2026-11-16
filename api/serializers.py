@@ -58,14 +58,23 @@ class WorkspaceSettingsSerializer(serializers.ModelSerializer):
         max_length=8,
         allow_empty=True,
     )
+    protected_terms = serializers.ListField(
+        child=serializers.CharField(max_length=80, trim_whitespace=True),
+        max_length=20,
+        allow_empty=True,
+        required=False,
+    )
 
     class Meta:
         model = Workspace
-        fields = ("id", "name", "voice_guidance", "snippets")
+        fields = ("id", "name", "voice_guidance", "snippets", "protected_terms")
         read_only_fields = ("id",)
 
     def validate_snippets(self, value):
         return list(dict.fromkeys(item for item in (phrase.strip() for phrase in value) if item))
+
+    def validate_protected_terms(self, value):
+        return list(dict.fromkeys(term.strip() for term in value))
 
 
 class EmailTokenObtainPairSerializer(TokenObtainPairSerializer):

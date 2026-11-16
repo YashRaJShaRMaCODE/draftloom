@@ -18,6 +18,7 @@ Each signed-in free workspace is capped at 100 successful AI requests per UTC ca
 - Rewrite text while preserving its intent, or summarise the key points.
 - Choose a clear, warm, direct, or formal output tone for either action.
 - Add optional voice guidance and up to eight reusable phrases; anonymous settings stay in the current browser tab, while signed-in workspace settings can be saved in the configured database. Phrases enter an AI request only after you insert them into the draft.
+- Add up to 20 protected product terms; a result is rejected if a term present in the source changes. Signed-in terms use owner-managed workspace settings; anonymous terms stay in the current tab.
 - Create a password-protected workspace in local development; each new account must verify its email before signing in and gets a private workspace owner membership.
 - Invite teammates by email with a seven-day, single-use link; only the invited, verified account can accept it. Invitation tokens are stored as hashes, and owners can revoke pending invitations.
 - Let workspace owners review the team, remove members, and transfer ownership. Only owners can change shared voice guidance and reusable phrases; members can use those settings while writing.
