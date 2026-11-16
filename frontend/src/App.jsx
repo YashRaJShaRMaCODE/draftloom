@@ -188,6 +188,8 @@ function App() {
   const [accountMessage, setAccountMessage] = useState(() => emailAction?.type === "reset" ? "Choose a new password for your account." : "");
   const [accountError, setAccountError] = useState("");
   const [result, setResult] = useState("");
+  const [rationales, setRationales] = useState([]);
+  const [explainChanges, setExplainChanges] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
   const [previousDraft, setPreviousDraft] = useState(() => readSessionDraft(PREVIOUS_DRAFT_STORAGE_KEY));
   const [error, setError] = useState("");
@@ -294,12 +296,14 @@ function App() {
     setLoading(true);
     setError("");
     setResult("");
+    setRationales([]);
     setComparisonOpen(false);
     setCopyStatus("");
 
     try {
       const payload = { text, mode, style, format, voice_guidance: voiceGuidance, protected_terms: protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean), adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
       payload.context_brief = contextBrief;
+      payload.include_rationale = explainChanges && mode === "rewrite";
       const currentAccount = account
         ? workspace?.role === "owner" ? await saveWorkspaceSettings() : account
         : null;
@@ -313,6 +317,7 @@ function App() {
       }
       if (response.data.usage) setWorkspace((current) => current ? { ...current, usage: response.data.usage } : current);
       setResult(response.data.result);
+      setRationales(response.data.rationales || []);
     } catch (requestError) {
       const response = axios.isAxiosError(requestError) ? requestError.response : undefined;
       const code = axios.isAxiosError(requestError) ? requestError.code : undefined;
@@ -726,9 +731,26 @@ function App() {
 
   const updateMode = (value) => {
     setMode(value);
+    if (value !== "rewrite") setExplainChanges(false);
     setResult("");
+    setRationales([]);
     setComparisonOpen(false);
     setError("");
+  };
+
+  const updateExplainChanges = (value) => {
+    setExplainChanges(value);
+    setResult("");
+    setRationales([]);
+    setComparisonOpen(false);
+    setError("");
+  };
+
+  const focusOriginalSentence = (change) => {
+    const editor = textareaRef.current;
+    if (!editor) return;
+    editor.focus();
+    editor.setSelectionRange(change.source_start, change.source_start + change.original.length);
   };
 
   const updateStyle = (value) => {
@@ -1099,6 +1121,12 @@ function App() {
                     <option value="meeting_recap">Meeting recap</option>
                   </select>
                 </label>
+                {mode === "rewrite" && (
+                  <label className="consent-row rationale-toggle">
+                    <input type="checkbox" disabled={loading} checked={explainChanges} onChange={(event) => updateExplainChanges(event.target.checked)} />
+                    <span>Explain key changes</span>
+                  </label>
+                )}
               </div>
               <p className="mode-hint">
                 {format === "customer_email" ? "Draft only. Nothing is sent." : mode === "rewrite" ? "Keep the idea. Make the wording clearer." : "Keep the key points. Leave out the extra detail."}
@@ -1147,7 +1175,24 @@ function App() {
                   <article><h3>Original · {wordCount.toLocaleString()} words</h3><p>{text}</p></article>
                   <article><h3>{mode === "rewrite" ? "Rewrite" : "Summary"} · {result.trim().split(/\s+/).length.toLocaleString()} words</h3><p>{result}</p></article>
                 </div>
-              ) : <p>{result}</p>
+              ) : (
+                <div className="result-content">
+                  <p>{result}</p>
+                  {rationales.length > 0 && (
+                    <section className="change-rationales" aria-labelledby="change-rationales-title">
+                      <div className="rationale-heading"><h3 id="change-rationales-title">Why these sentences changed</h3><span>AI explanation · review for accuracy</span></div>
+                      {rationales.map((change, index) => (
+                        <article className="rationale-card" key={`${change.source_start}-${change.result_start}`}>
+                          <div className="rationale-card-heading"><h4>Change {index + 1}</h4><button className="quiet-button" type="button" onClick={() => focusOriginalSentence(change)}>Select original</button></div>
+                          <p><strong>Before</strong><span>{change.original}</span></p>
+                          <p><strong>After</strong><span>{change.revised}</span></p>
+                          <p><strong>Reason</strong><span>{change.reason}</span></p>
+                        </article>
+                      ))}
+                    </section>
+                  )}
+                </div>
+              )
             ) : (
               <div className="empty-state">
                 <span className="empty-mark" aria-hidden="true">Aa</span>

@@ -548,6 +548,46 @@ class RewriteApiTests(TestCase):
 
     @patch.dict(os.environ, {"GEMINI_API_KEY": "server-secret"})
     @patch("api.views.requests.post")
+    def test_change_rationales_link_exact_source_and_revised_sentences(self, post):
+        source = "Hello 😀. Please send by Friday."
+        revised = "Hello 😀. Please share it by Friday."
+        upstream = Mock(ok=True)
+        upstream.json.return_value = {"candidates": [{"content": {"parts": [{"text": json.dumps({
+            "result": revised,
+            "changes": [{"original": "Please send by Friday.", "revised": "Please share it by Friday.", "reason": "Uses a more natural request."}],
+        })}]}}]}
+        post.return_value = upstream
+
+        response = self.client.post(self.url, {**self.payload, "text": source, "include_rationale": True}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["result"], revised)
+        self.assertEqual(response.data["rationales"], [{
+            "original": "Please send by Friday.", "revised": "Please share it by Friday.",
+            "reason": "Uses a more natural request.", "source_start": len(source[:source.index("Please")].encode("utf-16-le")) // 2,
+            "result_start": len(revised[:revised.index("Please")].encode("utf-16-le")) // 2,
+        }])
+        config = post.call_args.kwargs["json"]["generationConfig"]
+        self.assertEqual(config["responseMimeType"], "application/json")
+        self.assertEqual(config["responseSchema"]["required"], ["result", "changes"])
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "server-secret"})
+    @patch("api.views.requests.post")
+    def test_change_rationale_rejects_unlinked_sentences(self, post):
+        upstream = Mock(ok=True)
+        upstream.json.return_value = {"candidates": [{"content": {"parts": [{"text": json.dumps({
+            "result": "A clearer note.",
+            "changes": [{"original": "Invented source sentence.", "revised": "A clearer note.", "reason": "Improves clarity."}],
+        })}]}}]}
+        post.return_value = upstream
+
+        response = self.client.post(self.url, {**self.payload, "include_rationale": True}, format="json")
+
+        self.assertEqual(response.status_code, 502)
+        self.assertIn("failed", response.data["error"].lower())
+
+    @patch.dict(os.environ, {"GEMINI_API_KEY": "server-secret"})
+    @patch("api.views.requests.post")
     def test_hides_upstream_error_details(self, post):
         upstream = Mock(ok=False, status_code=403)
         post.return_value = upstream
