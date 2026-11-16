@@ -11,6 +11,23 @@ class Workspace(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
 
 
+class WorkspaceStyleGuideVersion(models.Model):
+    BEFORE_SAVE = "before_save"
+    BEFORE_RESTORE = "before_restore"
+    ACTION_CHOICES = ((BEFORE_SAVE, "Before save"), (BEFORE_RESTORE, "Before restore"))
+
+    workspace = models.ForeignKey(Workspace, on_delete=models.CASCADE, related_name="style_guide_versions")
+    saved_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL)
+    voice_guidance = models.CharField(max_length=500, blank=True)
+    snippets = models.JSONField(default=list, blank=True)
+    action = models.CharField(max_length=20, choices=ACTION_CHOICES, default=BEFORE_SAVE)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("-created_at", "-id")
+        indexes = (models.Index(fields=("workspace", "-created_at"), name="style_version_recent_idx"),)
+
+
 class WorkspaceMembership(models.Model):
     OWNER = "owner"
     MEMBER = "member"

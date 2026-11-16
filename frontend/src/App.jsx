@@ -449,6 +449,30 @@ function App() {
     }
   };
 
+  const restoreStyleGuideVersion = async (versionId) => {
+    if (!account || !workspace?.id) return;
+    setAccountError("");
+    setAccountMessage("Restoring saved style guide…");
+    try {
+      const { response, account: updatedAccount } = await authenticatedRequest({
+        method: "post",
+        url: `${API_URL}/api/workspace/style-guide/${versionId}/restore/`,
+        data: { workspace_id: workspace.id },
+      }, account);
+      setAccount(updatedAccount);
+      storeAccount(updatedAccount);
+      setWorkspace((current) => ({ ...current, ...response.data }));
+      setVoiceGuidance(response.data.voice_guidance);
+      setSnippets(response.data.snippets.map((text, index) => ({ id: `saved-${index}`, text })));
+      persistSessionDraft(response.data.voice_guidance, VOICE_STORAGE_KEY);
+      try { sessionStorage.setItem(SNIPPETS_STORAGE_KEY, JSON.stringify(response.data.snippets.map((text, index) => ({ id: `saved-${index}`, text })))); } catch { /* account settings remain usable in memory */ }
+      setAccountMessage("Saved style guide restored.");
+    } catch (requestError) {
+      setAccountError(requestError.response?.data?.error || "Could not restore this style guide.");
+      setAccountMessage("");
+    }
+  };
+
   const sendWorkspaceInvitation = async (event) => {
     event.preventDefault();
     if (!account || !workspace?.id || inviting) return;
@@ -1081,6 +1105,21 @@ function App() {
               <input id="new-snippet" value={snippetDraft} maxLength={MAX_SNIPPET_LENGTH} disabled={loading || (account && workspace?.role !== "owner") || snippets.length >= 8} placeholder="Add a phrase your team uses…" onChange={(event) => setSnippetDraft(event.target.value)} />
               <button className="quiet-button" type="submit" disabled={loading || (account && workspace?.role !== "owner") || !snippetDraft.trim() || snippets.length >= 8}>Save phrase</button>
             </form>
+            {account && workspace?.role === "owner" && (
+              <section className="style-guide-history" aria-labelledby="style-guide-history-title">
+                <div className="snippet-heading"><span id="style-guide-history-title" className="field-label">Recent style guide versions</span><span>Up to 10 shown · 20 kept</span></div>
+                {workspaceLoading ? <p className="editor-meta">Loading saved versions…</p> : workspace?.style_guide_versions?.length ? (
+                  <ul className="style-version-list">
+                    {workspace.style_guide_versions.map((version) => (
+                      <li key={version.id}>
+                        <div><strong>{new Date(version.created_at).toLocaleString()}</strong><span>{version.snippets.length} reusable {version.snippets.length === 1 ? "phrase" : "phrases"} · {version.action === "before_restore" ? "Before restore" : "Before edit"}</span></div>
+                        <button className="quiet-button" type="button" disabled={loading || workspaceLoading} onClick={() => restoreStyleGuideVersion(version.id)}>Restore</button>
+                      </li>
+                    ))}
+                  </ul>
+                ) : <p className="editor-meta">Saved versions appear after the team voice or reusable phrases change.</p>}
+              </section>
+            )}
           </details>
 
           <details className="team-writing-settings context-brief">

@@ -34,6 +34,7 @@ from .models import (
     Workspace,
     WorkspaceInvitation,
     WorkspaceMembership,
+    WorkspaceStyleGuideVersion,
     WorkspaceSubscription,
 )
 from .serializers import (
@@ -377,9 +378,17 @@ def workspace_settings(request):
     if request.method == "PATCH":
         if membership.role != WorkspaceMembership.OWNER:
             return Response({"error": "Only workspace owners can change shared writing settings."}, status=403)
-        serializer = WorkspaceSettingsSerializer(workspace, data=request.data, partial=True)
-        serializer.is_valid(raise_exception=True)
-        serializer.save()
+        with transaction.atomic():
+            workspace = Workspace.objects.select_for_update().get(pk=workspace.pk)
+            serializer = WorkspaceSettingsSerializer(workspace, data=request.data, partial=True)
+            serializer.is_valid(raise_exception=True)
+            values = serializer.validated_data
+            style_changed = (
+                "voice_guidance" in values and values["voice_guidance"] != workspace.voice_guidance
+            ) or ("snippets" in values and values["snippets"] != workspace.snippets)
+            if style_changed:
+                record_style_guide_version(workspace, request.user, WorkspaceStyleGuideVersion.BEFORE_SAVE)
+            serializer.save()
     subscription = getattr(workspace, "subscription", None)
     billing = {
         "enabled": settings.BILLING_ENABLED,
@@ -389,7 +398,60 @@ def workspace_settings(request):
         "cancel_at_period_end": subscription.cancel_at_period_end if subscription else False,
         "has_customer": bool(subscription and subscription.stripe_customer_id),
     }
-    return Response({"email": request.user.email, "role": membership.role, "workspaces": available, **WorkspaceSettingsSerializer(workspace).data, "usage": usage_for_workspace(workspace), "billing": billing, "email_preferences": email_preferences})
+    style_versions = style_guide_versions(workspace) if membership.role == WorkspaceMembership.OWNER else []
+    return Response({"email": request.user.email, "role": membership.role, "workspaces": available, **WorkspaceSettingsSerializer(workspace).data, "style_guide_versions": style_versions, "usage": usage_for_workspace(workspace), "billing": billing, "email_preferences": email_preferences})
+
+
+def record_style_guide_version(workspace, user, action):
+    WorkspaceStyleGuideVersion.objects.create(
+        workspace=workspace, saved_by=user, voice_guidance=workspace.voice_guidance,
+        snippets=workspace.snippets, action=action,
+    )
+    stale_ids = list(
+        WorkspaceStyleGuideVersion.objects.filter(workspace=workspace)
+        .order_by("-created_at", "-id").values_list("id", flat=True)[20:]
+    )
+    if stale_ids:
+        WorkspaceStyleGuideVersion.objects.filter(id__in=stale_ids).delete()
+
+
+def style_guide_versions(workspace):
+    return [{
+        "id": version.id, "voice_guidance": version.voice_guidance,
+        "snippets": version.snippets, "action": version.action, "created_at": version.created_at,
+    } for version in WorkspaceStyleGuideVersion.objects.filter(workspace=workspace)[:10]]
+
+
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+@throttle_classes([UserRateThrottle])
+def restore_workspace_style_guide(request, version_id):
+    if not settings.ACCOUNTS_ENABLED:
+        return account_service_unavailable()
+    if not isinstance(request.data, dict):
+        return Response({"error": "Request body must be a JSON object."}, status=400)
+    membership = membership_for_workspace(request.user, request.data.get("workspace_id"))
+    if not membership:
+        return Response({"error": "Workspace not found for this account."}, status=404)
+    if membership.role != WorkspaceMembership.OWNER:
+        return Response({"error": "Only workspace owners can restore writing style history."}, status=403)
+    with transaction.atomic():
+        workspace = Workspace.objects.select_for_update().get(pk=membership.workspace_id)
+        version = WorkspaceStyleGuideVersion.objects.select_for_update().filter(
+            pk=version_id, workspace=workspace,
+        ).first()
+        if not version:
+            return Response({"error": "Style-guide version not found."}, status=404)
+        changed = workspace.voice_guidance != version.voice_guidance or workspace.snippets != version.snippets
+        if changed:
+            record_style_guide_version(workspace, request.user, WorkspaceStyleGuideVersion.BEFORE_RESTORE)
+            workspace.voice_guidance = version.voice_guidance
+            workspace.snippets = version.snippets
+            workspace.save(update_fields=("voice_guidance", "snippets"))
+    return Response({
+        **WorkspaceSettingsSerializer(workspace).data,
+        "style_guide_versions": style_guide_versions(workspace),
+    })
 
 
 @api_view(["GET", "PATCH"])

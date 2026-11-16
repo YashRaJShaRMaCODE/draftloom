@@ -17,6 +17,7 @@ flowchart LR
 
 - Browser draft text stays in the current tab until the user confirms an AI request. The API validates request size/mode and holds workspace usage reservation in a service module.
 - Account email/password hash, workspaces, role memberships, settings and usage are database-backed. The frontend uses token auth; account recovery and deletion have explicit API routes.
+- Workspace style-guide history stores only voice guidance and reusable phrases. Changed saves/restores snapshot the prior values in a transaction; owners can inspect the latest ten, and the newest twenty are retained. Protected terms are excluded.
 - AI provider key and payment secrets are server-side environment configuration. Do not expose secrets in Vite variables.
 - Product marketing email is distinct from required verification/recovery mail. Optional signup capture uses double opt-in and portfolio-wide LeadHub suppression when the HTTPS service is configured.
 - Static free tools run in the browser and do not upload the draft. Optional email signup sends only the address, consent, product id and page path.

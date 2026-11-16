@@ -6,6 +6,7 @@ from .views import (
     create_billing_portal_session,
     create_checkout_session,
     remove_workspace_member,
+    restore_workspace_style_guide,
     revoke_workspace_invitation,
     rewrite_text,
     stripe_webhook,
@@ -28,4 +29,5 @@ urlpatterns = [
     path("workspace/team/", workspace_team, name="workspace-team"),
     path("workspace/team/ownership/", transfer_workspace_ownership, name="transfer-workspace-ownership"),
     path("workspace/team/<int:member_id>/", remove_workspace_member, name="remove-workspace-member"),
+    path("workspace/style-guide/<int:version_id>/restore/", restore_workspace_style_guide, name="restore-workspace-style-guide"),
 ]

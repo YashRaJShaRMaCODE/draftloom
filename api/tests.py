@@ -21,6 +21,7 @@ from .models import (
     Workspace,
     WorkspaceInvitation,
     WorkspaceMembership,
+    WorkspaceStyleGuideVersion,
     WorkspaceSubscription,
     WorkspaceUsage,
 )
@@ -242,6 +243,62 @@ class RewriteApiTests(TestCase):
         self.assertEqual(response.data["snippets"], ["Thanks for the update.", "Please share the next step."])
         self.assertEqual(workspace.protected_terms, ["Acme Cloud", "Northstar API"])
         self.assertEqual(response.data["protected_terms"], ["Acme Cloud", "Northstar API"])
+
+    def test_workspace_style_guide_versions_restore_only_for_the_owner(self):
+        owner = get_user_model().objects.create_user(username="owner@example.com", email="owner@example.com", password="safe-password-8472")
+        member = get_user_model().objects.create_user(username="member@example.com", email="member@example.com", password="safe-password-8472")
+        workspace = Workspace.objects.create(name="Northstar", owner=owner, voice_guidance="Clear and warm.", snippets=["Hello there."])
+        WorkspaceMembership.objects.create(workspace=workspace, user=owner, role="owner")
+        WorkspaceMembership.objects.create(workspace=workspace, user=member, role="member")
+        self.client.force_authenticate(user=owner)
+
+        updated = self.client.patch(f"/api/workspace/?workspace_id={workspace.pk}", {
+            "voice_guidance": "Brief and direct.", "snippets": ["Thanks for the note."],
+        }, format="json")
+        self.assertEqual(updated.status_code, 200, updated.data)
+        self.assertEqual(len(updated.data["style_guide_versions"]), 1)
+        version_id = updated.data["style_guide_versions"][0]["id"]
+
+        restored = self.client.post(f"/api/workspace/style-guide/{version_id}/restore/", {"workspace_id": workspace.pk}, format="json")
+        self.assertEqual(restored.status_code, 200, restored.data)
+        self.assertEqual(restored.data["voice_guidance"], "Clear and warm.")
+        self.assertEqual(restored.data["snippets"], ["Hello there."])
+        self.assertEqual(len(restored.data["style_guide_versions"]), 2)
+
+        self.client.force_authenticate(user=member)
+        member_history = self.client.get(f"/api/workspace/?workspace_id={workspace.pk}")
+        self.assertEqual(member_history.status_code, 200)
+        self.assertEqual(member_history.data["style_guide_versions"], [])
+        self.assertEqual(self.client.post(f"/api/workspace/style-guide/{version_id}/restore/", {"workspace_id": workspace.pk}, format="json").status_code, 403)
+
+    def test_style_guide_history_does_not_snapshot_unchanged_settings_or_leak_across_workspaces(self):
+        owner = get_user_model().objects.create_user(username="owner@example.com", email="owner@example.com", password="safe-password-8472")
+        other = get_user_model().objects.create_user(username="other@example.com", email="other@example.com", password="safe-password-8472")
+        workspace = Workspace.objects.create(name="Northstar", owner=owner, voice_guidance="Clear and warm.")
+        other_workspace = Workspace.objects.create(name="Other", owner=other)
+        WorkspaceMembership.objects.create(workspace=workspace, user=owner, role="owner")
+        WorkspaceMembership.objects.create(workspace=other_workspace, user=other, role="owner")
+        self.client.force_authenticate(user=owner)
+
+        same = self.client.patch(f"/api/workspace/?workspace_id={workspace.pk}", {"voice_guidance": "Clear and warm."}, format="json")
+        self.assertEqual(same.status_code, 200)
+        self.assertEqual(same.data["style_guide_versions"], [])
+        foreign_version = other_workspace.style_guide_versions.create(voice_guidance="Private style")
+        response = self.client.post(f"/api/workspace/style-guide/{foreign_version.pk}/restore/", {"workspace_id": workspace.pk}, format="json")
+        self.assertEqual(response.status_code, 404)
+
+    def test_style_guide_history_retains_only_twenty_versions(self):
+        user = get_user_model().objects.create_user(username="owner@example.com", email="owner@example.com", password="safe-password-8472")
+        workspace = Workspace.objects.create(name="Northstar", owner=user)
+        WorkspaceMembership.objects.create(workspace=workspace, user=user, role="owner")
+        for number in range(21):
+            WorkspaceStyleGuideVersion.objects.create(workspace=workspace, voice_guidance=f"Version {number}")
+        self.client.force_authenticate(user=user)
+
+        response = self.client.patch(f"/api/workspace/?workspace_id={workspace.pk}", {"voice_guidance": "Updated"}, format="json")
+
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(WorkspaceStyleGuideVersion.objects.filter(workspace=workspace).count(), 20)
 
     def test_workspace_settings_do_not_cross_account_boundaries(self):
         user = get_user_model().objects.create_user(username="outside@example.com", email="outside@example.com", password="safe-password-8472")

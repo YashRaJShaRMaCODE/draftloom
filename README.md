@@ -21,6 +21,7 @@ Each signed-in free workspace is capped at 100 successful AI requests per UTC ca
 - Add up to 20 protected product terms; a result is rejected if a term present in the source changes. Signed-in terms use owner-managed workspace settings; anonymous terms stay in the current tab.
 - Add an optional per-request context brief with a reader, goal, supported facts to keep, and things to avoid. It stays in page memory and is sent only after processing consent.
 - Ask for an optional explanation of key rewrite changes. The API requires exact source and revised sentence quotes, links them to their positions, and rejects explanations that cannot be verified against the text.
+- Restore a previous workspace voice guide or reusable-phrase set; only owners can access history, and at most 20 versions are retained.
 - Create a password-protected workspace in local development; each new account must verify its email before signing in and gets a private workspace owner membership.
 - Invite teammates by email with a seven-day, single-use link; only the invited, verified account can accept it. Invitation tokens are stored as hashes, and owners can revoke pending invitations.
 - Let workspace owners review the team, remove members, and transfer ownership. Only owners can change shared voice guidance and reusable phrases; members can use those settings while writing.
