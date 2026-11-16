@@ -295,3 +295,4 @@ textarea::placeholder { color: #8695a8; }
   .hero-actions { align-items: flex-start; }
   .team-access-note { max-width: 100%; flex-basis: 100%; }
 }
+.other-products input{accent-color:var(--blue)}

@@ -46,6 +46,8 @@ Each signed-in free workspace is capped at 100 successful AI requests per UTC ca
 - Protect the static frontend with a restrictive Content Security Policy and cache hashed assets for a year.
 - The local build includes a plain-language privacy notice at `/privacy.html`; it still needs operator contact details and a jurisdiction-specific review before commercial launch.
 - Free, login-free tools run locally in the browser: [`/tools/clear-copy-check.html`](https://clear-writing-studio.onrender.com/tools/clear-copy-check.html) and [`/tools/email-tone-template.html`](https://clear-writing-studio.onrender.com/tools/email-tone-template.html). Optional email signup is hidden until the approved LeadHub HTTPS URL is configured.
+- The main workspace can show opt-in related-product suggestions after a separate checkbox; the request sends only the product ID and does not include drafts or usage activity.
+- Before enabling it, set the `leadhub-base-url` meta tag in `frontend/index.html` to the verified HTTPS LeadHub origin and add that exact origin to the static host's `connect-src` policy. Keep both unset until the service, sender, and privacy notice are approved.
 - Practical guides: [clear client emails](https://clear-writing-studio.onrender.com/guides/write-clear-client-emails.html), [support replies](https://clear-writing-studio.onrender.com/guides/support-reply-template.html), and [meeting summaries](https://clear-writing-studio.onrender.com/guides/meeting-summary-template.html). Local revisions are not deployed.
 
 ## Stack

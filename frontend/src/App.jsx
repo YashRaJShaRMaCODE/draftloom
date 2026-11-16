@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import axios from "axios";
 import { buildReviewPacket } from "./utils/reviewPacket.js";
 import { renderTemplate, templateVariables } from "./utils/messageTemplates.js";
@@ -9,6 +9,7 @@ import { markdownResult } from "./utils/markdownExport.js";
 import { docxResult } from "./utils/docxExport.js";
 import { workspaceUsageCsv } from "./utils/usageReport.js";
 import { WRITING_LOCALES } from "./utils/writingLocales.js";
+import { OtherProducts } from "./components/OtherProducts.jsx";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -1479,6 +1480,7 @@ function App() {
       <footer className="page-footer">
         <span>Clear writing, one pass at a time.</span>
         <span>18+ · Professional use · <a href="/privacy.html">Privacy</a> · <a href="/terms.html">Terms</a></span>
+        {createElement(OtherProducts)}
       </footer>
     </main>
   );
