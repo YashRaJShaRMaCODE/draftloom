@@ -138,6 +138,8 @@ textarea::placeholder { color: #8695a8; }
 .style-control select { width: 122px; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); font: inherit; font-size: 12px; }
 .format-control { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 600; }
 .format-control select { width: 158px; max-width: 100%; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); font: inherit; font-size: 12px; }
+.locale-control { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 600; }
+.locale-control select { width: 132px; max-width: 100%; min-height: 44px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: white; color: var(--ink); font: inherit; font-size: 12px; }
 .mode-switch { display: inline-flex; gap: 3px; padding: 4px; border: 1px solid var(--line); border-radius: 11px; background: #f6f8fa; }
 .mode-switch button { min-height: 36px; padding: 0 12px; border: 0; border-radius: 8px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 600; }
 .mode-switch button { transition: background-color .18s ease, color .18s ease, box-shadow .18s ease; }

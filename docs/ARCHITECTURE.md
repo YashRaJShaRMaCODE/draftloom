@@ -29,6 +29,7 @@ flowchart LR
 - Protected terminology is saved on the workspace only by its owner; anonymous terms stay in session storage. On a rewrite request, the API uses the authenticated workspace glossary (not client-supplied replacements), or accepts anonymous session terms, and rejects generated output that changes a source term's spelling or capitalization. Terms are passed to Gemini as literal data, not trusted as instructions.
 - The optional context brief (reader, goal, supported facts to keep, avoid list) stays in page memory and is sent only after the same explicit processing confirmation as the draft. The API bounds fields and treats them as contextual data; it never allows them to add unsupported facts.
 - Optional change rationales use Gemini's JSON response schema. The API verifies quoted source and revised sentences are exact substrings before returning paired positions; unlinked or malformed explanations are rejected. The UI labels rationales as AI explanations and can select the matching source sentence; this is not fact verification.
+- English variant is a per-request enum (International by default; India, UK, or US optional). It changes spelling/idiom only, and the server prompt explicitly preserves names, dates, currencies, units, facts, intent, commitments, and protected terms. It is not saved to the workspace.
 
 ## Decisions and gaps
 

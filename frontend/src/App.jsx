@@ -6,6 +6,9 @@ import { DRAFT_RETENTION_OPTIONS, purgeExpiredDrafts } from "./utils/draftRetent
 import { findSensitiveValues, redactSensitiveValues } from "./utils/sensitiveData.js";
 import { networkStatusMessage } from "./utils/networkStatus.js";
 import { markdownResult } from "./utils/markdownExport.js";
+import { docxResult } from "./utils/docxExport.js";
+import { workspaceUsageCsv } from "./utils/usageReport.js";
+import { WRITING_LOCALES } from "./utils/writingLocales.js";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -179,6 +182,7 @@ function App() {
   const [mode, setMode] = useState("rewrite");
   const [style, setStyle] = useState("clear");
   const [format, setFormat] = useState("general");
+  const [locale, setLocale] = useState("international");
   const [voiceGuidance, setVoiceGuidance] = useState(() => readSessionValue(VOICE_STORAGE_KEY).slice(0, MAX_VOICE_LENGTH));
   const [protectedTermsText, setProtectedTermsText] = useState(() => readSessionValue(PROTECTED_TERMS_STORAGE_KEY));
   const [contextBrief, setContextBrief] = useState({ reader: "", goal: "", must_keep: "", avoid: "" });
@@ -230,6 +234,7 @@ function App() {
   const [redactSensitiveBeforeProcessing, setRedactSensitiveBeforeProcessing] = useState(false);
   const [copyLabel, setCopyLabel] = useState("Share result");
   const [copyStatus, setCopyStatus] = useState("");
+  const [docxExporting, setDocxExporting] = useState(false);
   const textareaRef = useRef(null);
   const accountPanelRef = useRef(null);
   const characterCount = [...text].length;
@@ -367,7 +372,7 @@ function App() {
     setCopyStatus("");
 
     try {
-      const payload = { text: redactSensitiveBeforeProcessing ? redactSensitiveValues(text, sensitiveFindings) : text, mode, style, format, voice_guidance: voiceGuidance, protected_terms: protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean), adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
+      const payload = { text: redactSensitiveBeforeProcessing ? redactSensitiveValues(text, sensitiveFindings) : text, mode, style, format, locale, voice_guidance: voiceGuidance, protected_terms: protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean), adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
       payload.context_brief = contextBrief;
       payload.include_rationale = explainChanges && mode === "rewrite";
       const currentAccount = account
@@ -934,6 +939,37 @@ function App() {
     setCopyStatus("Markdown download started.");
   };
 
+  const downloadDocx = async () => {
+    setDocxExporting(true);
+    try {
+      const blob = await docxResult(result);
+      if (!blob) return;
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "clear-writing-result.docx";
+      link.click();
+      window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+      setCopyStatus("Word document download started.");
+    } catch {
+      setCopyStatus("Word export failed. Try downloading as .txt or .md.");
+    } finally {
+      setDocxExporting(false);
+    }
+  };
+
+  const downloadUsageReport = () => {
+    const csv = workspaceUsageCsv(workspace);
+    if (!csv) return;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "clear-writing-usage.csv";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setAccountMessage("Workspace usage report downloaded. Provider cost is not measured yet.");
+  };
+
   const handleEditorKeyDown = (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
@@ -1059,7 +1095,7 @@ function App() {
                 </label>}
                 <p><strong>{workspace?.name || "Your workspace"}</strong><span>{workspace?.role || "Member"}</span></p>
                 {inviteToken && <div className="invite-accept"><p>You’ve been invited to join a Clear Writing workspace.</p><button className="primary-button" type="button" onClick={acceptWorkspaceInvitation}>Accept invitation</button></div>}
-                {workspace?.usage && <div className="usage-meter"><span>This month: {workspace.usage.used} / {workspace.usage.limit} AI requests</span><progress max={workspace.usage.limit} value={workspace.usage.used} aria-label="Monthly AI requests used" /></div>}
+                {workspace?.usage && <div className="usage-meter"><span>This month: {workspace.usage.used} / {workspace.usage.limit} AI requests</span><progress max={workspace.usage.limit} value={workspace.usage.used} aria-label="Monthly AI requests used" />{workspace.role === "owner" && <button className="quiet-button" type="button" onClick={downloadUsageReport}>Download usage CSV</button>}</div>}
                 <form className="email-preferences" onSubmit={saveEmailPreferences}>
                   <label className="email-opt-in">
                     <input type="checkbox" checked={workspaceLoading ? false : onboardingEmailsOptIn} disabled={workspaceLoading || emailPreferenceSaving} onChange={(event) => setOnboardingEmailsOptIn(event.target.checked)} />
@@ -1314,6 +1350,12 @@ function App() {
                     <option value="meeting_recap">Meeting recap</option>
                   </select>
                 </label>
+                <label className="locale-control">
+                  <span>English variant</span>
+                  <select disabled={loading} value={locale} onChange={(event) => setLocale(event.target.value)}>
+                    {WRITING_LOCALES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
+                  </select>
+                </label>
                 {mode === "rewrite" && (
                   <label className="consent-row rationale-toggle">
                     <input type="checkbox" disabled={loading} checked={explainChanges} onChange={(event) => updateExplainChanges(event.target.checked)} />
@@ -1324,6 +1366,7 @@ function App() {
               <p className="mode-hint">
                 {format === "customer_email" ? "Draft only. Nothing is sent." : mode === "rewrite" ? "Keep the idea. Make the wording clearer." : "Keep the key points. Leave out the extra detail."}
               </p>
+              <p className="editor-meta">Variant affects spelling and idiom only; dates, currency and units stay as written.</p>
             </div>
             <button
               className={`primary-button${loading ? " is-loading" : ""}`}
@@ -1407,6 +1450,7 @@ function App() {
                   <button className="quiet-button" type="button" onClick={useResultAsDraft}>Use as next draft</button>
                   <button className="quiet-button" type="button" onClick={downloadResult}>Download .txt</button>
                   <button className="quiet-button" type="button" onClick={downloadMarkdown}>Download .md</button>
+                  <button className="quiet-button" type="button" onClick={downloadDocx} disabled={docxExporting}>{docxExporting ? "Preparing Word file…" : "Download .docx"}</button>
                   <button className="quiet-button" type="button" aria-expanded={reviewPacketOpen} onClick={() => setReviewPacketOpen((open) => !open)}>Prepare review packet</button>
                   <button className="copy-button" type="button" onClick={copyResult}>{copyLabel}</button>
                 </>
