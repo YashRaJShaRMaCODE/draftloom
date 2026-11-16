@@ -10,5 +10,6 @@ Captured 2026-11-17 from the public pre-change page and local production build. 
 - [After: local structured context brief](screenshots/after-context-brief.png)
 - [After: opt-in change explanations](screenshots/after-change-rationale-option.png)
 - Style-guide rollback is implemented locally; an authenticated workspace screenshot is pending.
+- The review packet is browser-generated and its HTML escaping test passes; a rendered packet screenshot is pending.
 
 The sample copy is synthetic. Local Playwright smoke flow generated the checklist and email outline; both pages had no console errors at the tested viewport. At 390px wide both had no horizontal overflow. Protected-term control was visually checked in the local production build; the account-backed save flow still needs a configured service and authenticated live proof. Context fields and the rationale option were checked at 390px with no horizontal overflow. API tests cover validated paired rationale output; no live Gemini request was made. This is a focused path check, not a complete cross-browser, screen-reader, or WCAG conformance audit.

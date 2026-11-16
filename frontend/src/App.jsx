@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import axios from "axios";
+import { buildReviewPacket } from "./utils/reviewPacket.js";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -191,6 +192,9 @@ function App() {
   const [rationales, setRationales] = useState([]);
   const [explainChanges, setExplainChanges] = useState(false);
   const [comparisonOpen, setComparisonOpen] = useState(false);
+  const [reviewPacketOpen, setReviewPacketOpen] = useState(false);
+  const [reviewerName, setReviewerName] = useState("");
+  const [reviewerEmail, setReviewerEmail] = useState("");
   const [previousDraft, setPreviousDraft] = useState(() => readSessionDraft(PREVIOUS_DRAFT_STORAGE_KEY));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -673,6 +677,16 @@ function App() {
       setCopyStatus("Sharing and clipboard are unavailable. Select and copy the result manually.");
       window.setTimeout(() => setCopyLabel("Share result"), 1600);
     }
+  };
+
+  const downloadReviewPacket = () => {
+    const packet = buildReviewPacket({ original: text, revised: result, reviewer: reviewerName, reviewerEmail, rationales });
+    const url = URL.createObjectURL(new Blob([packet], { type: "text/html;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `clear-writing-review-${new Date().toISOString().slice(0, 10)}.html`;
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
   };
 
   const updateText = (value) => {
@@ -1248,10 +1262,22 @@ function App() {
                   <button className="quiet-button" type="button" aria-expanded={comparisonOpen} onClick={() => setComparisonOpen((open) => !open)}>{comparisonOpen ? "Back to result" : "Compare with draft"}</button>
                   <button className="quiet-button" type="button" onClick={useResultAsDraft}>Use as next draft</button>
                   <button className="quiet-button" type="button" onClick={downloadResult}>Download .txt</button>
+                  <button className="quiet-button" type="button" aria-expanded={reviewPacketOpen} onClick={() => setReviewPacketOpen((open) => !open)}>Prepare review packet</button>
                   <button className="copy-button" type="button" onClick={copyResult}>{copyLabel}</button>
                 </>
               )}
             </div>
+          )}
+          {reviewPacketOpen && result && (
+            <section className="review-packet-panel" aria-labelledby="review-packet-title">
+              <h3 id="review-packet-title">Share a review copy</h3>
+              <p>The HTML file is created on this device. It is not uploaded or emailed; your reviewer can mark a decision and save the response as PDF.</p>
+              <div className="review-packet-fields">
+                <label>Reviewer name <input value={reviewerName} maxLength={120} onChange={(event) => setReviewerName(event.target.value)} /></label>
+                <label>Reviewer email <input type="email" value={reviewerEmail} maxLength={254} onChange={(event) => setReviewerEmail(event.target.value)} /></label>
+              </div>
+              <button className="copy-button" type="button" onClick={downloadReviewPacket}>Download review packet</button>
+            </section>
           )}
           <span className="visually-hidden" role="status" aria-live="polite">{copyStatus}</span>
           <div className="result-footer">

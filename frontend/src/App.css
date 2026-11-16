@@ -189,6 +189,41 @@
   padding-top: 16px;
 }
 
+.review-packet-panel {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  margin-top: 14px;
+  padding: 16px;
+}
+
+.review-packet-panel h3,
+.review-packet-panel p {
+  margin: 0 0 10px;
+}
+
+.review-packet-fields {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin: 12px 0;
+}
+
+.review-packet-fields label {
+  display: grid;
+  gap: 6px;
+}
+
+.review-packet-fields input {
+  min-width: 0;
+  width: 100%;
+}
+
+@media (max-width: 600px) {
+  .review-packet-fields {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .style-version-list {
   list-style: none;
   margin: 8px 0 0;
