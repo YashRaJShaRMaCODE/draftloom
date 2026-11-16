@@ -14,6 +14,7 @@ const MAX_VOICE_LENGTH = 500;
 const MAX_SNIPPET_LENGTH = 300;
 const MAX_PROTECTED_TERMS = 20;
 const MAX_PROTECTED_TERM_LENGTH = 80;
+const MAX_CONTEXT_FIELD_LENGTH = 240;
 const ACCOUNTS_ENABLED = import.meta.env.DEV || import.meta.env.VITE_ACCOUNTS_ENABLED === "true";
 const sampleDrafts = [
   {
@@ -158,6 +159,7 @@ function App() {
   const [format, setFormat] = useState("general");
   const [voiceGuidance, setVoiceGuidance] = useState(() => readSessionValue(VOICE_STORAGE_KEY).slice(0, MAX_VOICE_LENGTH));
   const [protectedTermsText, setProtectedTermsText] = useState(() => readSessionValue(PROTECTED_TERMS_STORAGE_KEY));
+  const [contextBrief, setContextBrief] = useState({ reader: "", goal: "", must_keep: "", avoid: "" });
   const [snippets, setSnippets] = useState(readSnippets);
   const [snippetDraft, setSnippetDraft] = useState("");
   const [account, setAccount] = useState(readAccount);
@@ -297,6 +299,7 @@ function App() {
 
     try {
       const payload = { text, mode, style, format, voice_guidance: voiceGuidance, protected_terms: protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean), adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
+      payload.context_brief = contextBrief;
       const currentAccount = account
         ? workspace?.role === "owner" ? await saveWorkspaceSettings() : account
         : null;
@@ -683,6 +686,13 @@ function App() {
     setError("");
   };
 
+  const updateContextBrief = (field, value) => {
+    setContextBrief((current) => ({ ...current, [field]: value.slice(0, MAX_CONTEXT_FIELD_LENGTH) }));
+    setResult("");
+    setComparisonOpen(false);
+    setError("");
+  };
+
   const saveSnippets = (nextSnippets) => {
     setSnippets(nextSnippets);
     try {
@@ -1051,6 +1061,19 @@ function App() {
             </form>
           </details>
 
+          <details className="team-writing-settings context-brief">
+            <summary>Add a context brief <span>Optional · for this request only</span></summary>
+            <label className="field-label" htmlFor="context-reader">Who will read this?</label>
+            <input className="voice-guidance" id="context-reader" maxLength={MAX_CONTEXT_FIELD_LENGTH} value={contextBrief.reader} onChange={(event) => updateContextBrief("reader", event.target.value)} placeholder="For example: a customer" />
+            <label className="field-label" htmlFor="context-goal">What should the message do?</label>
+            <input className="voice-guidance" id="context-goal" maxLength={MAX_CONTEXT_FIELD_LENGTH} value={contextBrief.goal} onChange={(event) => updateContextBrief("goal", event.target.value)} placeholder="For example: confirm the next step" />
+            <label className="field-label" htmlFor="context-must-keep">Facts to keep</label>
+            <textarea className="voice-guidance" id="context-must-keep" maxLength={MAX_CONTEXT_FIELD_LENGTH} value={contextBrief.must_keep} onChange={(event) => updateContextBrief("must_keep", event.target.value)} placeholder="Only include facts already present in your draft." />
+            <label className="field-label" htmlFor="context-avoid">Things to avoid</label>
+            <textarea className="voice-guidance" id="context-avoid" maxLength={MAX_CONTEXT_FIELD_LENGTH} value={contextBrief.avoid} onChange={(event) => updateContextBrief("avoid", event.target.value)} placeholder="For example: jargon or overly formal wording" />
+            <div className="editor-meta"><span>Kept in memory for this page only. Sent to Gemini with your draft after you approve processing.</span><span>{Object.values(contextBrief).filter(Boolean).length} / 4 fields</span></div>
+          </details>
+
           <div className="action-row">
             <div>
               <div className="action-controls">
@@ -1097,7 +1120,7 @@ function App() {
             {!adultConfirmed ? "Confirm you’re 18 or older to continue." : !processingConfirmed ? "Agree to send the draft to Gemini before continuing." : "Your draft is sent only when you choose Rewrite or Summarise."}
           </p>
           <p className="privacy-note" id="privacy-note">
-            Your draft stays in this browser tab. {account ? "Signed-in workspace voice guidance, protected terms, and saved phrases are stored in your workspace." : "Unsynced voice guidance, protected terms, and saved phrases stay in this browser tab."} When you choose an action, the draft, protected terms, and workspace voice guidance are sent to Google Gemini after you confirm processing; a saved phrase is included only if you insert it into the draft. Don’t include sensitive, confidential, or personal details. On unpaid API use, Google may use prompts and responses to improve its services and human reviewers may process them. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Read Gemini’s terms</a>.
+            Your draft stays in this browser tab. {account ? "Signed-in workspace voice guidance, protected terms, and saved phrases are stored in your workspace." : "Unsynced voice guidance, protected terms, and saved phrases stay in this browser tab."} When you choose an action, the draft, optional context brief, protected terms, and workspace voice guidance are sent to Google Gemini after you confirm processing; a saved phrase is included only if you insert it into the draft. Don’t include sensitive, confidential, or personal details. On unpaid API use, Google may use prompts and responses to improve its services and human reviewers may process them. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Read Gemini’s terms</a>.
           </p>
           <label className="consent-row">
             <input type="checkbox" disabled={loading} checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} />

@@ -7,5 +7,6 @@ Captured 2026-11-17 from the public pre-change page and local production build. 
 - [After: local Email Tone Planner with sample draft](screenshots/after-email-tone-template.png)
 - [After: mobile meeting-summary guide](screenshots/after-meeting-summary-guide-mobile.png)
 - [After: local protected product terms control](screenshots/after-protected-terms.png)
+- [After: local structured context brief](screenshots/after-context-brief.png)
 
-The sample copy is synthetic. Local Playwright smoke flow generated the checklist and email outline; both pages had no console errors at the tested viewport. At 390px wide both had no horizontal overflow. Protected-term control was visually checked in the local production build; the account-backed save flow still needs a configured service and authenticated live proof. This is a focused first-time path check, not a complete cross-browser, screen-reader, or WCAG conformance audit.
+The sample copy is synthetic. Local Playwright smoke flow generated the checklist and email outline; both pages had no console errors at the tested viewport. At 390px wide both had no horizontal overflow. Protected-term control was visually checked in the local production build; the account-backed save flow still needs a configured service and authenticated live proof. Context fields were checked at 390px with no horizontal overflow and accessible labels. This is a focused first-time path check, not a complete cross-browser, screen-reader, or WCAG conformance audit.

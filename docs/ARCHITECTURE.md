@@ -21,6 +21,7 @@ flowchart LR
 - Product marketing email is distinct from required verification/recovery mail. Optional signup capture uses double opt-in and portfolio-wide LeadHub suppression when the HTTPS service is configured.
 - Static free tools run in the browser and do not upload the draft. Optional email signup sends only the address, consent, product id and page path.
 - Protected terminology is saved on the workspace only by its owner; anonymous terms stay in session storage. On a rewrite request, the API uses the authenticated workspace glossary (not client-supplied replacements), or accepts anonymous session terms, and rejects generated output that changes a source term's spelling or capitalization. Terms are passed to Gemini as literal data, not trusted as instructions.
+- The optional context brief (reader, goal, supported facts to keep, avoid list) stays in page memory and is sent only after the same explicit processing confirmation as the draft. The API bounds fields and treats them as contextual data; it never allows them to add unsupported facts.
 
 ## Decisions and gaps
 
