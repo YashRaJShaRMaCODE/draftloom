@@ -21,6 +21,7 @@ flowchart LR
 - Review packets are rendered and downloaded in the browser as standalone HTML, with no server request or third-party assets. Reviewers mark a decision/comment and print to PDF; the user shares the returned file through their own channel.
 - Message templates are stored as bounded JSON on the workspace and edited only by its owner. Placeholder names are restricted to lowercase letters, digits, and underscores; values are inserted as plain draft text in the current browser tab.
 - Draft and previous-draft autosaves stay in `sessionStorage`; the selected 15-minute, 4-hour or 24-hour window is stored as a non-sensitive browser preference. Expiration is checked when loading and every 30 seconds while the page is open; closing the tab clears both drafts.
+- Before a Gemini request, the browser can identify email addresses, phone-like values and common API-token patterns. Redaction is opt-in, performed locally immediately before the request, and leaves the local draft unchanged. Pattern detection is best-effort and is not a privacy guarantee.
 - AI provider key and payment secrets are server-side environment configuration. Do not expose secrets in Vite variables.
 - Product marketing email is distinct from required verification/recovery mail. Optional signup capture uses double opt-in and portfolio-wide LeadHub suppression when the HTTPS service is configured.
 - Static free tools run in the browser and do not upload the draft. Optional email signup sends only the address, consent, product id and page path.

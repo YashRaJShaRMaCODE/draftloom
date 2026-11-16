@@ -272,6 +272,22 @@
   padding: 4px 8px;
 }
 
+.sensitive-data-notice {
+  background: var(--accent-bg);
+  border: 1px solid var(--accent-border);
+  border-radius: 10px;
+  margin: 12px 0;
+  padding: 12px;
+}
+
+.sensitive-data-notice > p {
+  margin: 0 0 8px;
+}
+
+.sensitive-data-notice .consent-row {
+  margin: 0;
+}
+
 .review-packet-panel h3,
 .review-packet-panel p {
   margin: 0 0 10px;

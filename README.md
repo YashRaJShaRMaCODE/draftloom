@@ -25,6 +25,7 @@ Each signed-in free workspace is capped at 100 successful AI requests per UTC ca
 - Download a self-contained review packet with reviewer, decision, and comment fields; draft text stays on the device until you choose how to share the file.
 - Create workspace message templates with `{{customer_name}}`-style fields; members fill values and insert the message into their current draft.
 - Choose a 15-minute, 4-hour, or 24-hour browser-only draft retention window; the tab clears saved drafts at expiry and when it closes.
+- Review possible email, phone, and common API-token values before processing; optional redaction runs in the browser and is best-effort.
 - Create a password-protected workspace in local development; each new account must verify its email before signing in and gets a private workspace owner membership.
 - Invite teammates by email with a seven-day, single-use link; only the invited, verified account can accept it. Invitation tokens are stored as hashes, and owners can revoke pending invitations.
 - Let workspace owners review the team, remove members, and transfer ownership. Only owners can change shared voice guidance and reusable phrases; members can use those settings while writing.

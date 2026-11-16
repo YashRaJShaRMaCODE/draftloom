@@ -3,6 +3,7 @@ import axios from "axios";
 import { buildReviewPacket } from "./utils/reviewPacket.js";
 import { renderTemplate, templateVariables } from "./utils/messageTemplates.js";
 import { DRAFT_RETENTION_OPTIONS, purgeExpiredDrafts } from "./utils/draftRetention.js";
+import { findSensitiveValues, redactSensitiveValues } from "./utils/sensitiveData.js";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -223,12 +224,14 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [adultConfirmed, setAdultConfirmed] = useState(false);
   const [processingConfirmed, setProcessingConfirmed] = useState(false);
+  const [redactSensitiveBeforeProcessing, setRedactSensitiveBeforeProcessing] = useState(false);
   const [copyLabel, setCopyLabel] = useState("Share result");
   const [copyStatus, setCopyStatus] = useState("");
   const textareaRef = useRef(null);
   const accountPanelRef = useRef(null);
   const characterCount = [...text].length;
   const wordCount = text.trim() ? text.trim().split(/\s+/).length : 0;
+  const sensitiveFindings = findSensitiveValues(text);
   const workspaceRequestKey = account ? `${account.email}:${activeWorkspaceId || "default"}` : "";
   const workspaceLoading = Boolean(account && loadedWorkspaceKey !== workspaceRequestKey);
 
@@ -350,7 +353,7 @@ function App() {
     setCopyStatus("");
 
     try {
-      const payload = { text, mode, style, format, voice_guidance: voiceGuidance, protected_terms: protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean), adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
+      const payload = { text: redactSensitiveBeforeProcessing ? redactSensitiveValues(text, sensitiveFindings) : text, mode, style, format, voice_guidance: voiceGuidance, protected_terms: protectedTermsText.split(/\r?\n/).map((term) => term.trim()).filter(Boolean), adult_confirmed: adultConfirmed, external_processing_confirmed: processingConfirmed, ...(workspace?.id ? { workspace_id: workspace.id } : {}) };
       payload.context_brief = contextBrief;
       payload.include_rationale = explainChanges && mode === "rewrite";
       const currentAccount = account
@@ -737,6 +740,7 @@ function App() {
   const updateText = (value) => {
     const nextText = [...value].slice(0, MAX_LENGTH).join("");
     setText(nextText);
+    setRedactSensitiveBeforeProcessing(false);
     const draftSaved = persistSessionDraft(nextText);
     const previousCleared = persistSessionDraft("", PREVIOUS_DRAFT_STORAGE_KEY);
     setDraftStorageStatus(draftSaved && previousCleared ? (nextText ? "saved" : "ready") : "unavailable");
@@ -1314,6 +1318,10 @@ function App() {
           <p className="privacy-note" id="privacy-note">
             Your draft stays in this browser tab. {account ? "Signed-in workspace voice guidance, protected terms, and saved phrases are stored in your workspace." : "Unsynced voice guidance, protected terms, and saved phrases stay in this browser tab."} When you choose an action, the draft, optional context brief, protected terms, and workspace voice guidance are sent to Google Gemini after you confirm processing; a saved phrase is included only if you insert it into the draft. Don’t include sensitive, confidential, or personal details. On unpaid API use, Google may use prompts and responses to improve its services and human reviewers may process them. <a href="https://ai.google.dev/gemini-api/terms" target="_blank" rel="noreferrer">Read Gemini’s terms</a>.
           </p>
+          {sensitiveFindings.length > 0 && <div className="sensitive-data-notice" role="status">
+            <p>Possible sensitive details found: {[...new Set(sensitiveFindings.map((item) => item.type))].join(", ")}. Check them before you send this draft.</p>
+            <label className="consent-row"><input type="checkbox" disabled={loading} checked={redactSensitiveBeforeProcessing} onChange={(event) => setRedactSensitiveBeforeProcessing(event.target.checked)} /><span>Replace detected values with labels before sending. Your draft here stays unchanged.</span></label>
+          </div>}
           <label className="consent-row">
             <input type="checkbox" disabled={loading} checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} />
             <span>I confirm I’m 18 or older.</span>

@@ -4,6 +4,7 @@ import { analyzeDraft, buildEmail } from '../public/tools/tools.js';
 import { buildReviewPacket } from '../src/utils/reviewPacket.js';
 import { renderTemplate, templateVariables } from '../src/utils/messageTemplates.js';
 import { isDraftExpired, purgeExpiredDrafts } from '../src/utils/draftRetention.js';
+import { findSensitiveValues, redactSensitiveValues } from '../src/utils/sensitiveData.js';
 
 test('copy check counts words and identifies long sentences and filler phrases', () => {
   const result = analyzeDraft('I really need a review. This is a long sentence with enough words to cross the twenty four word threshold and become something the writer should consider breaking into two shorter sentences for clarity.');
@@ -51,4 +52,12 @@ test('draft retention expires at the selected deadline and ignores missing times
   const storage = { getItem: (key) => store.get(key) || null, removeItem: (key) => store.delete(key) };
   assert.equal(purgeExpiredDrafts(storage, 15, now), true);
   assert.equal(store.size, 0);
+});
+
+test('sensitive-value scanner detects common identifiers and redacts without changing the source', () => {
+  const source = 'Contact alex@example.com or +1 (415) 555-0123; token sk_live_1234567890abcdef.';
+  const findings = findSensitiveValues(source);
+  assert.deepEqual(findings.map(({ type }) => type), ['email address', 'phone number', 'API key or access token']);
+  assert.equal(redactSensitiveValues(source, findings), 'Contact [REDACTED: email address] or [REDACTED: phone number]; token [REDACTED: API key or access token].');
+  assert.equal(source.includes('alex@example.com'), true);
 });
