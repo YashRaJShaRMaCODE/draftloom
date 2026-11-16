@@ -10,7 +10,7 @@ idna==3.17
 packaging==26.2
 psycopg[binary]>=3.2,<4
 PyJWT==2.15.1
-python-dotenv==1.2.2
+python-dotenv==1.2.4
 requests==2.34.2
 stripe==12.5.1
 sqlparse==0.6.1
