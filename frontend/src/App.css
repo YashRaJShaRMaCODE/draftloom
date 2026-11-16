@@ -288,6 +288,11 @@
   margin: 0;
 }
 
+.offline-message {
+  color: var(--text-muted);
+  margin: 0 0 10px;
+}
+
 .review-packet-panel h3,
 .review-packet-panel p {
   margin: 0 0 10px;

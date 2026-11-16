@@ -17,7 +17,7 @@ Impact/effort are estimates, not buyer evidence. Competitor gaps below summarize
 | 9 | Workspace quality benchmark from owner-approved sample pairs | Shows whether a style change improves useful drafts | Users still manually judge correctness | High | High |
 | 10 | Export to Markdown and DOCX with stable formatting | Avoids reformatting when moving work into existing tools | Workflow friction and output portability | Medium | Medium |
 | 11 | Downloadable workspace usage and cost report | Helps an owner understand usage and provider spend | Cost visibility is absent from a request-count-only meter | Medium | Medium |
-| 12 | Explicit offline state and safe retry queue | Prevents losing work during a network interruption | Cloud-only interruption | Medium | Medium |
+| 12 | Explicit offline state and safe retry queue | Prevents losing work during a network interruption | Cloud-only interruption | Medium | Medium | **Implemented locally** — offline submissions are disabled with a clear manual-retry message; no background resend occurs and the draft remains in the tab. |
 | 13 | Batch review of multiple approved, non-sensitive drafts | Saves repeated setup for support/ops teams | Repetitive one-at-a-time workflow | Medium | High |
 | 14 | Consent-based Google Docs export and Slack review link | Reduces manual copy/paste and review handoff | Limited workflow integration | Medium | High |
 | 15 | Regional English/language variant control with glossary protection | Helps teams serve different locales without changing key terms | Language and context mismatch | Medium | High |

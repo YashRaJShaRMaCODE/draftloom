@@ -4,6 +4,7 @@ import { buildReviewPacket } from "./utils/reviewPacket.js";
 import { renderTemplate, templateVariables } from "./utils/messageTemplates.js";
 import { DRAFT_RETENTION_OPTIONS, purgeExpiredDrafts } from "./utils/draftRetention.js";
 import { findSensitiveValues, redactSensitiveValues } from "./utils/sensitiveData.js";
+import { networkStatusMessage } from "./utils/networkStatus.js";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -222,6 +223,7 @@ function App() {
   const [previousDraft, setPreviousDraft] = useState(() => readSessionDraft(PREVIOUS_DRAFT_STORAGE_KEY));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [adultConfirmed, setAdultConfirmed] = useState(false);
   const [processingConfirmed, setProcessingConfirmed] = useState(false);
   const [redactSensitiveBeforeProcessing, setRedactSensitiveBeforeProcessing] = useState(false);
@@ -234,6 +236,17 @@ function App() {
   const sensitiveFindings = findSensitiveValues(text);
   const workspaceRequestKey = account ? `${account.email}:${activeWorkspaceId || "default"}` : "";
   const workspaceLoading = Boolean(account && loadedWorkspaceKey !== workspaceRequestKey);
+  const offlineMessage = networkStatusMessage(isOnline);
+
+  useEffect(() => {
+    const updateConnection = () => setIsOnline(navigator.onLine);
+    window.addEventListener("online", updateConnection);
+    window.addEventListener("offline", updateConnection);
+    return () => {
+      window.removeEventListener("online", updateConnection);
+      window.removeEventListener("offline", updateConnection);
+    };
+  }, []);
 
   useEffect(() => {
     const timer = window.setInterval(() => {
@@ -344,7 +357,7 @@ function App() {
   }, [emailAction]);
 
   const submit = async () => {
-    if (!API_URL || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed || loading || workspaceLoading) return;
+    if (!API_URL || !isOnline || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed || loading || workspaceLoading) return;
     setLoading(true);
     setError("");
     setResult("");
@@ -1266,6 +1279,7 @@ function App() {
 
           <div className="action-row">
             <div>
+              {offlineMessage && <p className="offline-message" role="status">{offlineMessage}</p>}
               <div className="action-controls">
                 <div className="mode-switch" role="group" aria-label="Choose a writing action">
                   <button type="button" disabled={loading} aria-pressed={mode === "rewrite"} onClick={() => updateMode("rewrite")}>Rewrite</button>
@@ -1304,7 +1318,7 @@ function App() {
               className={`primary-button${loading ? " is-loading" : ""}`}
               type="button"
               onClick={submit}
-              disabled={!API_URL || loading || workspaceLoading || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed}
+              disabled={!API_URL || !isOnline || loading || workspaceLoading || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed}
             >
               {loading ? "Working…" : mode === "rewrite" ? "Rewrite text" : "Create summary"}
               {!loading && <span aria-hidden="true">↗</span>}

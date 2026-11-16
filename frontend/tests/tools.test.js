@@ -5,6 +5,7 @@ import { buildReviewPacket } from '../src/utils/reviewPacket.js';
 import { renderTemplate, templateVariables } from '../src/utils/messageTemplates.js';
 import { isDraftExpired, purgeExpiredDrafts } from '../src/utils/draftRetention.js';
 import { findSensitiveValues, redactSensitiveValues } from '../src/utils/sensitiveData.js';
+import { networkStatusMessage } from '../src/utils/networkStatus.js';
 
 test('copy check counts words and identifies long sentences and filler phrases', () => {
   const result = analyzeDraft('I really need a review. This is a long sentence with enough words to cross the twenty four word threshold and become something the writer should consider breaking into two shorter sentences for clarity.');
@@ -60,4 +61,9 @@ test('sensitive-value scanner detects common identifiers and redacts without cha
   assert.deepEqual(findings.map(({ type }) => type), ['email address', 'phone number', 'API key or access token']);
   assert.equal(redactSensitiveValues(source, findings), 'Contact [REDACTED: email address] or [REDACTED: phone number]; token [REDACTED: API key or access token].');
   assert.equal(source.includes('alex@example.com'), true);
+});
+
+test('offline state explains that drafts stay local and retry is manual', () => {
+  assert.equal(networkStatusMessage(false), 'You are offline. Your draft stays in this tab; reconnect, then choose Rewrite or Summarise again.');
+  assert.equal(networkStatusMessage(true), '');
 });
