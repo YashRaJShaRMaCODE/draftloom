@@ -5,6 +5,7 @@ import { renderTemplate, templateVariables } from "./utils/messageTemplates.js";
 import { DRAFT_RETENTION_OPTIONS, purgeExpiredDrafts } from "./utils/draftRetention.js";
 import { findSensitiveValues, redactSensitiveValues } from "./utils/sensitiveData.js";
 import { networkStatusMessage } from "./utils/networkStatus.js";
+import { markdownResult } from "./utils/markdownExport.js";
 
 const MAX_LENGTH = 5000;
 const REQUEST_TIMEOUT_MS = 45_000;
@@ -923,6 +924,16 @@ function App() {
     setCopyStatus("Text file download started.");
   };
 
+  const downloadMarkdown = () => {
+    const url = URL.createObjectURL(new Blob([markdownResult(result)], { type: "text/markdown;charset=utf-8" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = "clear-writing-result.md";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setCopyStatus("Markdown download started.");
+  };
+
   const handleEditorKeyDown = (event) => {
     if ((event.metaKey || event.ctrlKey) && event.key === "Enter") {
       event.preventDefault();
@@ -1395,6 +1406,7 @@ function App() {
                   <button className="quiet-button" type="button" aria-expanded={comparisonOpen} onClick={() => setComparisonOpen((open) => !open)}>{comparisonOpen ? "Back to result" : "Compare with draft"}</button>
                   <button className="quiet-button" type="button" onClick={useResultAsDraft}>Use as next draft</button>
                   <button className="quiet-button" type="button" onClick={downloadResult}>Download .txt</button>
+                  <button className="quiet-button" type="button" onClick={downloadMarkdown}>Download .md</button>
                   <button className="quiet-button" type="button" aria-expanded={reviewPacketOpen} onClick={() => setReviewPacketOpen((open) => !open)}>Prepare review packet</button>
                   <button className="copy-button" type="button" onClick={copyResult}>{copyLabel}</button>
                 </>
