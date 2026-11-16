@@ -9,6 +9,7 @@ import { markdownResult } from "./utils/markdownExport.js";
 import { docxResult } from "./utils/docxExport.js";
 import { workspaceUsageCsv } from "./utils/usageReport.js";
 import { WRITING_LOCALES } from "./utils/writingLocales.js";
+import { BatchReviewPanel } from "./components/BatchReviewPanel.jsx";
 import { OtherProducts } from "./components/OtherProducts.jsx";
 
 const MAX_LENGTH = 5000;
@@ -229,6 +230,9 @@ function App() {
   const [previousDraft, setPreviousDraft] = useState(() => readSessionDraft(PREVIOUS_DRAFT_STORAGE_KEY));
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
+  const [batchBusy, setBatchBusy] = useState(false);
+  const [batchResults, setBatchResults] = useState([]);
+  const [batchController, setBatchController] = useState(null);
   const [isOnline, setIsOnline] = useState(() => navigator.onLine);
   const [adultConfirmed, setAdultConfirmed] = useState(false);
   const [processingConfirmed, setProcessingConfirmed] = useState(false);
@@ -364,7 +368,7 @@ function App() {
   }, [emailAction]);
 
   const submit = async () => {
-    if (!API_URL || !isOnline || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed || loading || workspaceLoading) return;
+    if (!API_URL || !isOnline || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed || loading || batchBusy || workspaceLoading) return;
     setLoading(true);
     setError("");
     setResult("");
@@ -409,6 +413,65 @@ function App() {
       setLoading(false);
     }
   };
+
+  const runBatch = async (drafts) => {
+    if (!API_URL || !isOnline || !adultConfirmed || !processingConfirmed || loading || batchBusy || workspaceLoading) return;
+    const controller = new AbortController();
+    setBatchController(controller);
+    setBatchBusy(true);
+    setBatchResults(drafts.map((_, index) => ({ id: `${Date.now()}-${index}`, status: "queued", statusLabel: "Waiting", result: "", error: "" })));
+    const updateBatchItem = (index, changes) => setBatchResults((current) => current.map((item, itemIndex) => itemIndex === index ? { ...item, ...changes } : item));
+    try {
+      for (const [index, draft] of drafts.entries()) {
+        if (controller.signal.aborted) {
+          updateBatchItem(index, { status: "cancelled", statusLabel: "Stopped" });
+          continue;
+        }
+        updateBatchItem(index, { status: "running", statusLabel: "Working…" });
+        const payload = {
+          text: draft,
+          mode,
+          style,
+          format,
+          locale,
+          adult_confirmed: true,
+          external_processing_confirmed: true,
+          ...(workspace?.id ? { workspace_id: workspace.id } : {}),
+        };
+        try {
+          const config = { method: "post", url: `${API_URL}/api/rewrite/`, data: payload, timeout: REQUEST_TIMEOUT_MS, signal: controller.signal };
+          const { response, account: updatedAccount } = account
+            ? await authenticatedRequest(config, account)
+            : { response: await axios(config), account: null };
+          if (updatedAccount) {
+            setAccount(updatedAccount);
+            storeAccount(updatedAccount);
+          }
+          if (response.data.usage) setWorkspace((current) => current ? { ...current, usage: response.data.usage } : current);
+          updateBatchItem(index, { status: "done", statusLabel: "Ready to review", result: response.data.result });
+        } catch (requestError) {
+          if (controller.signal.aborted) {
+            updateBatchItem(index, { status: "cancelled", statusLabel: "Stopped" });
+            continue;
+          }
+          const rateLimited = requestError.response?.status === 429;
+          const message = rateLimited
+            ? "The service request limit was reached. Wait before starting another batch."
+            : requestError.response?.data?.error || "This draft could not be processed. You can retry it on its own.";
+          updateBatchItem(index, { status: "error", statusLabel: rateLimited ? "Limit reached" : "Needs retry", error: message });
+          if (rateLimited) {
+            drafts.slice(index + 1).forEach((_, pendingIndex) => updateBatchItem(index + pendingIndex + 1, { status: "cancelled", statusLabel: "Not sent" }));
+            break;
+          }
+        }
+      }
+    } finally {
+      setBatchController(null);
+      setBatchBusy(false);
+    }
+  };
+
+  const stopBatch = () => batchController?.abort();
 
   const submitAccount = async (event) => {
     event.preventDefault();
@@ -1186,7 +1249,7 @@ function App() {
           <textarea
             id="source-text"
             ref={textareaRef}
-            disabled={loading}
+            disabled={loading || batchBusy}
             placeholder="Paste a note, message or paragraph…"
             value={text}
             onChange={(event) => updateText(event.target.value)}
@@ -1219,6 +1282,14 @@ function App() {
               ))}
             </div>
           )}
+
+          {createElement(BatchReviewPanel, {
+            allowed: Boolean(API_URL && isOnline && adultConfirmed && processingConfirmed && !loading && !workspaceLoading),
+            busy: batchBusy,
+            results: batchResults,
+            onRun: runBatch,
+            onCancel: stopBatch,
+          })}
 
           <details className="team-writing-settings">
             <summary>Team voice &amp; reusable phrases <span>{account ? workspace?.role === "owner" ? "Managed for this workspace" : "Managed by the workspace owner" : "Optional · kept in this tab"}</span></summary>
@@ -1330,12 +1401,12 @@ function App() {
               {offlineMessage && <p className="offline-message" role="status">{offlineMessage}</p>}
               <div className="action-controls">
                 <div className="mode-switch" role="group" aria-label="Choose a writing action">
-                  <button type="button" disabled={loading} aria-pressed={mode === "rewrite"} onClick={() => updateMode("rewrite")}>Rewrite</button>
-                  <button type="button" disabled={loading} aria-pressed={mode === "summarise"} onClick={() => updateMode("summarise")}>Summarise</button>
+                  <button type="button" disabled={loading || batchBusy} aria-pressed={mode === "rewrite"} onClick={() => updateMode("rewrite")}>Rewrite</button>
+                  <button type="button" disabled={loading || batchBusy} aria-pressed={mode === "summarise"} onClick={() => updateMode("summarise")}>Summarise</button>
                 </div>
                 <label className="style-control">
                   <span>Output tone</span>
-                  <select disabled={loading} value={style} onChange={(event) => updateStyle(event.target.value)}>
+                  <select disabled={loading || batchBusy} value={style} onChange={(event) => updateStyle(event.target.value)}>
                     <option value="clear">Clear</option>
                     <option value="warm">Warm</option>
                     <option value="direct">Direct</option>
@@ -1344,7 +1415,7 @@ function App() {
                 </label>
                 <label className="format-control">
                   <span>Output format</span>
-                  <select disabled={loading} value={format} onChange={(event) => updateFormat(event.target.value)}>
+                  <select disabled={loading || batchBusy} value={format} onChange={(event) => updateFormat(event.target.value)}>
                     <option value="general">General</option>
                     <option value="customer_email">Customer email draft</option>
                     <option value="internal_update">Internal update</option>
@@ -1353,13 +1424,13 @@ function App() {
                 </label>
                 <label className="locale-control">
                   <span>English variant</span>
-                  <select disabled={loading} value={locale} onChange={(event) => setLocale(event.target.value)}>
+                  <select disabled={loading || batchBusy} value={locale} onChange={(event) => setLocale(event.target.value)}>
                     {WRITING_LOCALES.map(({ value, label }) => <option key={value} value={value}>{label}</option>)}
                   </select>
                 </label>
                 {mode === "rewrite" && (
                   <label className="consent-row rationale-toggle">
-                    <input type="checkbox" disabled={loading} checked={explainChanges} onChange={(event) => updateExplainChanges(event.target.checked)} />
+                    <input type="checkbox" disabled={loading || batchBusy} checked={explainChanges} onChange={(event) => updateExplainChanges(event.target.checked)} />
                     <span>Explain key changes</span>
                   </label>
                 )}
@@ -1373,7 +1444,7 @@ function App() {
               className={`primary-button${loading ? " is-loading" : ""}`}
               type="button"
               onClick={submit}
-              disabled={!API_URL || !isOnline || loading || workspaceLoading || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed}
+              disabled={!API_URL || !isOnline || loading || batchBusy || workspaceLoading || !text.trim() || characterCount > MAX_LENGTH || !adultConfirmed || !processingConfirmed}
             >
               {loading ? "Working…" : mode === "rewrite" ? "Rewrite text" : "Create summary"}
               {!loading && <span aria-hidden="true">↗</span>}
@@ -1389,14 +1460,14 @@ function App() {
           </p>
           {sensitiveFindings.length > 0 && <div className="sensitive-data-notice" role="status">
             <p>Possible sensitive details found: {[...new Set(sensitiveFindings.map((item) => item.type))].join(", ")}. Check them before you send this draft.</p>
-            <label className="consent-row"><input type="checkbox" disabled={loading} checked={redactSensitiveBeforeProcessing} onChange={(event) => setRedactSensitiveBeforeProcessing(event.target.checked)} /><span>Replace detected values with labels before sending. Your draft here stays unchanged.</span></label>
+            <label className="consent-row"><input type="checkbox" disabled={loading || batchBusy} checked={redactSensitiveBeforeProcessing} onChange={(event) => setRedactSensitiveBeforeProcessing(event.target.checked)} /><span>Replace detected values with labels before sending. Your draft here stays unchanged.</span></label>
           </div>}
           <label className="consent-row">
-            <input type="checkbox" disabled={loading} checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} />
+            <input type="checkbox" disabled={loading || batchBusy} checked={adultConfirmed} onChange={(event) => setAdultConfirmed(event.target.checked)} />
             <span>I confirm I’m 18 or older.</span>
           </label>
           <label className="consent-row">
-            <input type="checkbox" disabled={loading} checked={processingConfirmed} onChange={(event) => setProcessingConfirmed(event.target.checked)} />
+            <input type="checkbox" disabled={loading || batchBusy} checked={processingConfirmed} onChange={(event) => setProcessingConfirmed(event.target.checked)} />
             <span>I agree to send this text to Google Gemini for processing.</span>
           </label>
           {error && <p className="error-message" role="alert">{error}</p>}
